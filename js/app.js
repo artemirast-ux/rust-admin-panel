@@ -476,6 +476,14 @@ async function openPlayerCard(steamid) {
       <div class="prow"><span class="pkey">Аккаунт</span><span>${p.connections_count ? p.connections_count + " заходов" : "—"}</span></div>
     </div>
 
+    <h4>Игровая информация</h4>
+    <div class="pgrid">
+      <div class="prow"><span class="pkey">Состояние</span><span>${p.online ? '<span class="tag ok">в сети</span>' : '<span class="tag muted">не в сети</span>'}</span></div>
+      <div class="prow"><span class="pkey">На сервере</span><span>${p.online ? "сейчас играет" : fmtTime(p.last_seen)}</span></div>
+      <div class="prow"><span class="pkey">Двигался</span><span>${p.pos_x != null ? fmtTime(p.last_seen) : "—"}</span></div>
+      <div class="prow"><span class="pkey">Квадрат</span><span class="mono small">${mapSquare(p.pos_x, p.pos_z)}</span></div>
+    </div>
+
     ${linked.length ? `
       <h4>Связанные аккаунты (${linked.length})</h4>
       ${linked.map((x) => `
@@ -1653,11 +1661,11 @@ async function loadActions() {
     .join("");
 }
 
-/* ---------- Map (players positions) ---------- */
-
 // Rust world size in Unity units. Full map = 6000; smaller maps are 4500/3500 etc.
 // Positions are centered on (0,0), so x/z range roughly -WORLD_SIZE/2..WORLD_SIZE/2.
 const WORLD_SIZE = 6000;
+
+/* ---------- Map (players positions) ---------- */
 
 async function loadMap() {
   const { data, error } = await sb
@@ -2100,7 +2108,7 @@ function riskTag(risk) {
 
 // Deterministic color from a nickname, so the same player always gets the same avatar color
 function avatarColor(name) {
-  const palette = ["#4f8cff", "#e05252", "#43b657", "#e8a13a", "#c061ff", "#2fb6a8", "#d1639b", "#8a94a3"];
+  const palette = ["#fbbf24", "#f43f5e", "#10b981", "#43a6f0", "#c084fc", "#84cc16", "#f97316", "#a6a09a"];
   let hash = 0;
   const s = String(name || "?");
   for (let i = 0; i < s.length; i++) {
@@ -2113,4 +2121,15 @@ function initials(name) {
   const s = String(name || "?").trim();
   if (!s) return "?";
   return s.charAt(0).toUpperCase();
+}
+
+// Turns world coordinates into a Rust map square, like "B3" or "F10".
+// The map grid is a letter column (A..) for X and a number row for Z.
+function mapSquare(x, z) {
+  if (x === null || x === undefined || z === null || z === undefined) return "—";
+  const half = WORLD_SIZE / 2;
+  if (Math.abs(x) > half + 500 || Math.abs(z) > half + 500) return "—";
+  const col = Math.max(0, Math.min(25, Math.floor((x + half) / (WORLD_SIZE / 26))));
+  const row = Math.max(0, Math.min(25, Math.floor((-z + half) / (WORLD_SIZE / 26))));
+  return String.fromCharCode(65 + col) + (row + 1);
 }

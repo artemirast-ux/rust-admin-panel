@@ -25,31 +25,28 @@
     <aside class="sidebar">
       <div class="brand">RustAdminPanel</div>
       <nav>
-        <div class="nav-sect">Сервер</div>
         <a href="#" class="nav-link active" data-view="dashboard">Обзор</a>
+        <a href="#" class="nav-link" data-view="staff">Команда</a>
+        <a href="#" class="nav-link" data-view="alerts">Оповещения <span id="alertsBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="bans">Блокировки</a>
+        <a href="#" class="nav-link" data-view="checks">Проверки <span id="checksBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="reports">Репорты <span id="reportsBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="history">История</a>
+        <a href="#" class="nav-link" data-view="stats">Статистика</a>
+        <a href="#" class="nav-link" data-view="audit">Лог активности</a>
+        <a href="#" class="nav-link" data-view="drawings">Рисунки</a>
+        <a href="#" class="nav-link" data-view="settings">Разрешения</a>
+        <a href="#" class="nav-link" data-view="mutes">Муты</a>
+        <div class="nav-sect">Дополнительно</div>
         <a href="#" class="nav-link" data-view="players">Игроки</a>
         <a href="#" class="nav-link" data-view="map">Карта</a>
         <a href="#" class="nav-link" data-view="chat">Чат</a>
         <a href="#" class="nav-link" data-view="sleepers">Спальники</a>
-        <div class="nav-sect">Модерация</div>
-        <a href="#" class="nav-link" data-view="reports">Репорты <span id="reportsBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="checks">Проверки <span id="checksBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="alerts">Оповещения <span id="alertsBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="bans">Блокировки</a>
-        <a href="#" class="nav-link" data-view="mutes">Муты</a>
         <a href="#" class="nav-link" data-view="killanalysis">Подозрения <span id="suspiciousBadge" class="badge hidden"></span></a>
         <a href="#" class="nav-link" data-view="ipchecks">IP и VPN</a>
-        <div class="nav-sect">Информация</div>
-        <a href="#" class="nav-link" data-view="stats">Статистика</a>
-        <a href="#" class="nav-link" data-view="history">История</a>
-        <a href="#" class="nav-link" data-view="audit">Журнал аудита</a>
-        <a href="#" class="nav-link" data-view="staff">Сотрудники</a>
-        <div class="nav-sect">Система</div>
         <a href="#" class="nav-link" data-view="servers">Серверы</a>
         <a href="#" class="nav-link" data-view="integrations">Интеграции</a>
-        <a href="#" class="nav-link" data-view="settings">Настройки</a>
         <a href="#" class="nav-link" data-view="general">Общее</a>
-        <a href="#" class="nav-link" data-view="drawings">Рисунки</a>
       </nav>
       <button id="btnLogout" class="btn">Выйти</button>
     </aside>
@@ -275,7 +272,7 @@
 
       <section id="view-audit" class="view">
         <div class="panel">
-          <h3>Журнал аудита</h3>
+          <h3>Лог активности</h3>
           <p class="muted small" style="margin-bottom:12px">Все действия администраторов: кто, когда и какую команду отправил.</p>
           <table class="table">
             <thead>
@@ -288,8 +285,8 @@
 
       <section id="view-staff" class="view">
         <div class="panel">
-          <h3>Сотрудники</h3>
-          <p class="muted small" style="margin-bottom:12px">Администраторы, у которых есть доступ к панели. Управлять списком можно в Supabase: таблица <span class="mono">admins</span>.</p>
+          <h3>Команда</h3>
+          <p class="muted small" style="margin-bottom:12px">Сотрудники, у которых есть доступ к панели. Управлять списком можно в Supabase: таблица <span class="mono">admins</span>.</p>
           <table class="table">
             <thead>
               <tr><th>Email</th><th>Роль</th><th>Добавлен</th></tr>
@@ -308,7 +305,7 @@
       </section>
 
       <section id="view-settings" class="view">
-        <div class="panel"><div class="stub"><div class="stub-icon">⚙</div><h3>Настройки</h3><p>Настройки панели и плагина скоро будут доступны здесь. Сейчас они хранятся в <span class="mono">oxide/config/RustAdminPanel.json</span> на сервере.</p></div></div>
+        <div class="panel"><div class="stub"><div class="stub-icon">🔐</div><h3>Разрешения</h3><p>Управление ролями и правами сотрудников скоро будет доступно здесь. Сейчас список админов задаётся в таблице <span class="mono">admins</span> (Supabase).</p></div></div>
       </section>
 
       <section id="view-general" class="view">

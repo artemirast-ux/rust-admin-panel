@@ -1,17 +1,18 @@
 :root {
   --bg: #1e1e1e;
-  --bg-2: #252525;
-  --panel: #1c1c1c;
-  --panel-2: #2a2a2a;
-  --border: #333333;
-  --text: #d7dde5;
-  --muted: #8a94a3;
-  --accent: #4f8cff;
-  --accent-2: #3b6fd4;
-  --danger: #e05252;
-  --warn: #e8a13a;
-  --ok: #43b657;
-  --vpn: #c061ff;
+  --bg-2: #202020;
+  --panel: #2d2d2d;
+  --panel-2: #343434;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-2: rgba(255, 255, 255, 0.07);
+  --text: #d1d1d1;
+  --muted: #a6a09a;
+  --accent: #fbbf24;
+  --accent-dim: rgba(251, 191, 36, 0.1);
+  --danger: #f43f5e;
+  --warn: #f59e0b;
+  --ok: #10b981;
+  --vpn: #c084fc;
   --rust: #c6bdb4;
 }
 
@@ -46,7 +47,7 @@ body {
 .login-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 32px;
   width: 360px;
   text-align: center;
@@ -61,7 +62,7 @@ body {
   width: 100%;
   margin-top: 12px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-2);
   color: var(--text);
@@ -85,12 +86,12 @@ body {
 }
 
 .sidebar {
-  width: 230px;
+  width: 240px;
   background: var(--bg-2);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 16px 12px;
   position: sticky;
   top: 0;
   height: 100vh;
@@ -113,7 +114,7 @@ nav {
   color: var(--muted);
   text-decoration: none;
   padding: 9px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 14px;
 }
 
@@ -123,14 +124,15 @@ nav {
 }
 
 .nav-link.active {
-  background: var(--accent-2);
-  color: #fff;
+  background: var(--accent);
+  color: #1e1e1e;
+  font-weight: 600;
 }
 
 .badge {
   background: var(--danger);
   color: #fff;
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 1px 7px;
   font-size: 11px;
   margin-left: 6px;
@@ -189,7 +191,7 @@ nav {
 
 .dot.on {
   background: var(--ok);
-  box-shadow: 0 0 8px rgba(67, 182, 87, 0.8);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
 }
 
 .dot.off {
@@ -269,7 +271,7 @@ nav {
 .stat-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 16px;
 }
 
@@ -301,7 +303,7 @@ nav {
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 16px;
   margin-bottom: 14px;
 }
@@ -351,7 +353,7 @@ nav {
   background: var(--panel-2);
   color: var(--text);
   padding: 7px 14px;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
 }
@@ -363,7 +365,8 @@ nav {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: #1e1e1e;
+  font-weight: 600;
 }
 
 .btn.danger {
@@ -389,27 +392,27 @@ nav {
 }
 
 .tag.vpn {
-  background: rgba(192, 97, 255, 0.18);
+  background: rgba(192, 132, 252, 0.15);
   color: var(--vpn);
-  border: 1px solid rgba(192, 97, 255, 0.5);
+  border: 1px solid rgba(192, 132, 252, 0.4);
 }
 
 .tag.ok {
-  background: rgba(67, 182, 87, 0.15);
+  background: rgba(16, 185, 129, 0.15);
   color: var(--ok);
-  border: 1px solid rgba(67, 182, 87, 0.4);
+  border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
 .tag.warn {
-  background: rgba(232, 161, 58, 0.15);
-  color: var(--warn);
-  border: 1px solid rgba(232, 161, 58, 0.4);
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(251, 191, 36, 0.4);
 }
 
 .tag.danger {
-  background: rgba(224, 82, 82, 0.15);
+  background: rgba(244, 63, 94, 0.15);
   color: var(--danger);
-  border: 1px solid rgba(224, 82, 82, 0.4);
+  border: 1px solid rgba(244, 63, 94, 0.4);
 }
 
 .tag.muted {
@@ -424,7 +427,7 @@ nav {
   max-height: 65vh;
   overflow-y: auto;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
 }
 
 .chat-line {
@@ -459,7 +462,7 @@ nav {
 .modal-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 22px;
   width: 420px;
   max-width: 92vw;
@@ -481,7 +484,7 @@ nav {
 .modal-card textarea {
   width: 100%;
   padding: 9px 11px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-2);
   color: var(--text);
@@ -537,7 +540,7 @@ nav {
 .check-form input {
   width: 260px;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-2);
   color: var(--text);
@@ -566,7 +569,7 @@ nav {
   z-index: 100;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 6px;
   min-width: 200px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
@@ -580,8 +583,8 @@ nav {
 }
 
 .ctx-item:hover {
-  background: var(--accent-2);
-  color: #fff;
+  background: var(--accent-dim);
+  color: var(--accent);
 }
 
 /* ---------- Check (verification) chat ---------- */
@@ -589,7 +592,7 @@ nav {
 .check-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 6px;
   width: 640px;
   max-width: 94vw;
   max-height: 88vh;
@@ -627,15 +630,15 @@ nav {
 .ev {
   max-width: 78%;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: 6px;
   font-size: 13px;
   word-break: break-word;
 }
 
 .ev.admin {
   align-self: flex-end;
-  background: var(--accent-2);
-  color: #fff;
+  background: var(--accent);
+  color: #1e1e1e;
   border-bottom-right-radius: 3px;
 }
 
@@ -679,7 +682,7 @@ nav {
 .check-input-row input {
   flex: 1;
   padding: 9px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-2);
   color: var(--text);
@@ -725,7 +728,7 @@ nav {
 .suspicious-card {
   border: 1px solid var(--danger);
   background: rgba(224, 82, 82, 0.06);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 14px;
   margin-bottom: 12px;
 }
@@ -771,14 +774,14 @@ nav {
 .online-chart .bar {
   flex: 1;
   min-width: 3px;
-  background: var(--accent-2);
+  background: var(--accent);
   border-radius: 3px 3px 0 0;
   position: relative;
   cursor: default;
 }
 
 .online-chart .bar:hover {
-  background: var(--accent);
+  filter: brightness(1.2);
 }
 
 .online-chart .bar.now {
@@ -824,7 +827,7 @@ nav {
 .chat-broadcast input {
   flex: 1;
   padding: 9px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-2);
   color: var(--text);
@@ -839,7 +842,7 @@ nav {
   display: flex;
   gap: 10px;
   padding: 6px 4px;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .chat-msg:hover {
@@ -926,7 +929,7 @@ nav {
   align-items: center;
   gap: 10px;
   padding: 8px;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
 }
 
@@ -935,11 +938,11 @@ nav {
 }
 
 .chat-peer.active {
-  background: var(--accent-2);
+  background: var(--accent);
 }
 
 .chat-peer.active b {
-  color: #fff;
+  color: #1e1e1e;
 }
 
 .chat-peer-info {
@@ -1028,7 +1031,7 @@ nav {
   width: 100%;
   margin-bottom: 14px;
   padding: 9px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-2);
   color: var(--text);
@@ -1048,7 +1051,7 @@ nav {
 .pcard {
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 12px;
   cursor: pointer;
   transition: border-color 0.15s, transform 0.15s;
@@ -1100,21 +1103,21 @@ nav {
 }
 
 .ping-tag.ok {
-  background: rgba(67, 182, 87, 0.15);
+  background: rgba(16, 185, 129, 0.15);
   color: var(--ok);
-  border: 1px solid rgba(67, 182, 87, 0.4);
+  border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
 .ping-tag.warn {
-  background: rgba(232, 161, 58, 0.15);
-  color: var(--warn);
-  border: 1px solid rgba(232, 161, 58, 0.4);
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(251, 191, 36, 0.4);
 }
 
 .ping-tag.danger {
-  background: rgba(224, 82, 82, 0.15);
+  background: rgba(244, 63, 94, 0.15);
   color: var(--danger);
-  border: 1px solid rgba(224, 82, 82, 0.4);
+  border: 1px solid rgba(244, 63, 94, 0.4);
 }
 
 .ping-tag.muted {
@@ -1266,7 +1269,7 @@ nav {
   border: 1px solid transparent;
   color: var(--muted);
   padding: 7px 14px;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
 }
@@ -1277,8 +1280,9 @@ nav {
 }
 
 .tab.active {
-  color: #fff;
-  background: var(--accent-2);
+  color: #1e1e1e;
+  background: var(--accent);
+  font-weight: 600;
 }
 
 .htab {
@@ -1299,7 +1303,7 @@ nav {
   background: var(--ok);
   color: #fff;
   padding: 10px 18px;
-  border-radius: 10px;
+  border-radius: 6px;
   font-size: 13px;
   font-weight: 600;
   z-index: 200;
@@ -1326,7 +1330,7 @@ nav {
     linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 10% 10%;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -1356,7 +1360,7 @@ nav {
 }
 
 .map-dot.vpn {
-  box-shadow: 0 0 0 3px rgba(192, 97, 255, 0.55), 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.55), 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .map-legend {
@@ -1388,10 +1392,10 @@ nav {
   flex-shrink: 0;
 }
 
-.alert-item.vpn .alert-ico { background: rgba(192, 97, 255, 0.18); }
-.alert-item.report .alert-ico { background: rgba(232, 161, 58, 0.18); }
-.alert-item.ban .alert-ico { background: rgba(224, 82, 82, 0.18); }
-.alert-item.check .alert-ico { background: rgba(79, 140, 255, 0.18); }
+.alert-item.vpn .alert-ico { background: rgba(192, 132, 252, 0.18); }
+.alert-item.report .alert-ico { background: rgba(251, 191, 36, 0.18); }
+.alert-item.ban .alert-ico { background: rgba(244, 63, 94, 0.18); }
+.alert-item.check .alert-ico { background: rgba(67, 166, 240, 0.18); }
 
 .alert-text {
   flex: 1;
@@ -1442,8 +1446,8 @@ nav {
 }
 
 .top-row:nth-child(1) .top-num {
-  background: rgba(232, 161, 58, 0.2);
-  color: var(--warn);
+  background: rgba(251, 191, 36, 0.2);
+  color: var(--accent);
 }
 
 .top-count {
