@@ -1,9 +1,9 @@
 :root {
-  --bg: #0e1013;
-  --bg-2: #15181d;
-  --panel: #1a1e24;
-  --panel-2: #20252d;
-  --border: #2a3038;
+  --bg: #1e1e1e;
+  --bg-2: #252525;
+  --panel: #1c1c1c;
+  --panel-2: #2a2a2a;
+  --border: #333333;
   --text: #d7dde5;
   --muted: #8a94a3;
   --accent: #4f8cff;
@@ -12,6 +12,7 @@
   --warn: #e8a13a;
   --ok: #43b657;
   --vpn: #c061ff;
+  --rust: #c6bdb4;
 }
 
 * {
@@ -23,8 +24,9 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
 .hidden {
@@ -132,6 +134,16 @@ nav {
   padding: 1px 7px;
   font-size: 11px;
   margin-left: 6px;
+}
+
+.nav-sect {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 14px 12px 5px;
+  opacity: 0.7;
 }
 
 .content {
@@ -879,6 +891,137 @@ nav {
   font-size: 11px;
 }
 
+/* ---------- Chat (messenger layout) ---------- */
+
+.chat-panel {
+  display: flex;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.chat-sidebar {
+  width: 230px;
+  min-width: 230px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.chat-sidebar .search-input {
+  margin-bottom: 10px;
+}
+
+.chat-peers {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-peer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.chat-peer:hover {
+  background: var(--panel-2);
+}
+
+.chat-peer.active {
+  background: var(--accent-2);
+}
+
+.chat-peer.active b {
+  color: #fff;
+}
+
+.chat-peer-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-peer-info b {
+  display: block;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.chat-subtabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ctab {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.ctab.active {
+  display: flex;
+}
+
+.ctab .chat-log {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-subtabs .tab {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+@media (max-width: 760px) {
+  .chat-panel {
+    flex-direction: column;
+  }
+
+  .chat-sidebar {
+    width: auto;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 180px;
+  }
+
+  .chat-peers {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .chat-peer {
+    width: auto;
+  }
+}
+
 /* ---------- Players grid (cards) ---------- */
 
 .search-input {
@@ -1161,4 +1304,176 @@ nav {
   font-weight: 600;
   z-index: 200;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- Nav sections (RustApp style) ---------- */
+
+.nav-sect:first-child {
+  padding-top: 2px;
+}
+
+/* ---------- Map ---------- */
+
+.map-canvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 62vh;
+  margin: 0 auto;
+  background-color: #232323;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 10% 10%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.map-dot {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  border: 2px solid rgba(0, 0, 0, 0.55);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s;
+  user-select: none;
+}
+
+.map-dot:hover {
+  transform: scale(1.25);
+  z-index: 5;
+}
+
+.map-dot.vpn {
+  box-shadow: 0 0 0 3px rgba(192, 97, 255, 0.55), 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.map-legend {
+  margin-top: 10px;
+}
+
+/* ---------- Alerts ---------- */
+
+.alert-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-item:last-child {
+  border-bottom: none;
+}
+
+.alert-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.alert-item.vpn .alert-ico { background: rgba(192, 97, 255, 0.18); }
+.alert-item.report .alert-ico { background: rgba(232, 161, 58, 0.18); }
+.alert-item.ban .alert-ico { background: rgba(224, 82, 82, 0.18); }
+.alert-item.check .alert-ico { background: rgba(79, 140, 255, 0.18); }
+
+.alert-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.alert-kind {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+
+.alert-item.vpn .alert-kind { color: var(--vpn); }
+.alert-item.report .alert-kind { color: var(--warn); }
+.alert-item.ban .alert-kind { color: var(--danger); }
+.alert-item.check .alert-kind { color: var(--accent); }
+
+/* ---------- Top players list (stats) ---------- */
+
+.top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.top-row:last-child {
+  border-bottom: none;
+}
+
+.top-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-row:nth-child(1) .top-num {
+  background: rgba(232, 161, 58, 0.2);
+  color: var(--warn);
+}
+
+.top-count {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* ---------- Coming soon stubs ---------- */
+
+.stub {
+  text-align: center;
+  padding: 56px 20px;
+  color: var(--muted);
+}
+
+.stub-icon {
+  font-size: 40px;
+  margin-bottom: 14px;
+  opacity: 0.8;
+}
+
+.stub h3 {
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.stub p {
+  font-size: 13px;
+  max-width: 420px;
+  margin: 0 auto;
 }

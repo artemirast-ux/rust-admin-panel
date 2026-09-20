@@ -19,8 +19,8 @@
   "[Chat] SteamID for message avatar": "76561198134964268",
   "[Check] Command to send contact": "contact",
   "[Check] Contact message shown to players": "Our Discord: discord.gg/yourservers",
-  "[Components вЂў Custom actions] Allow console command execution from panel": true,
-  "[Components вЂў Kills] Collect kills": true,
-  "[Components вЂў Mutes] Support mutes system": true,
-  "[Components вЂў Chat] Collect chat messages": true
+  "[Components • Custom actions] Allow console command execution from panel": true,
+  "[Components • Kills] Collect kills": true,
+  "[Components • Mutes] Support mutes system": true,
+  "[Components • Chat] Collect chat messages": true
 }

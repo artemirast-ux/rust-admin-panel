@@ -707,8 +707,11 @@ namespace Oxide.Plugins
                 ["Subject.SubHead"] = "For player %PLAYER%",
                 ["UI.Close"] = "Close",
                 ["Check.NoticeTitle"] = "VERIFICATION",
-                ["Check.NoticeText"] = "You have been called for verification by an administrator.\nJoin our Discord and write to the administration: {0}\nor type /{1} in chat.",
+                ["Check.NoticeText"] = "<color=#c6bdb4><size=32><b>YOU ARE SUMMONED FOR A CHECK-UP</b></size></color>\n<color=#958D85>You have <color=#c6bdb4><b>3 minutes</b></color> to join our Discord and send your contact.\nDiscord: <color=#c6bdb4>{0}</color>\nUse the <b><color=#c6bdb4>/{1}</color></b> command to send your Discord.\n\nTo contact a moderator - use chat, not a command.</color>",
                 ["Check.NoticeButton"] = "I understand",
+                ["Contact.Error"] = "You did not send your Discord",
+                ["Contact.Sent"] = "You sent:",
+                ["Contact.SentWait"] = "If you sent the correct discord - wait for a friend request.",
                 ["Check.TargetNotFound"] = "Player not found. He may have left the server."
             }, this);
 
@@ -729,8 +732,11 @@ namespace Oxide.Plugins
                 ["Subject.SubHead"] = "На игрока %PLAYER%",
                 ["UI.Close"] = "Закрыть",
                 ["Check.NoticeTitle"] = "ПРОВЕРКА",
-                ["Check.NoticeText"] = "Вас вызвали на проверку администратором.\nЗайдите в наш Discord и обратитесь к администрации: {0}\nили напишите /{1} в чат.",
+                ["Check.NoticeText"] = "<color=#c6bdb4><size=32><b>ВАС ВЫЗВАЛИ НА ПРОВЕРКУ</b></size></color>\n<color=#958D85>У вас есть <color=#c6bdb4><b>3 минуты</b></color>, чтобы зайти в наш Discord и отправить свои контакты.\nDiscord: <color=#c6bdb4>{0}</color>\nИспользуйте команду <b><color=#c6bdb4>/{1}</color></b>, чтобы отправить свой Discord.\n\nЧтобы связаться с модератором — используйте чат, а не команду.</color>",
                 ["Check.NoticeButton"] = "Понятно",
+                ["Contact.Error"] = "Вы не отправили свой Discord",
+                ["Contact.Sent"] = "Вы отправили:",
+                ["Contact.SentWait"] = "Если вы отправили правильный дискорд — ждите заявку в друзья.",
                 ["Check.TargetNotFound"] = "Игрок не найден — возможно, он покинул сервер."
             }, this, "ru");
         }
@@ -1084,6 +1090,7 @@ namespace Oxide.Plugins
                 if (isVpn)
                 {
                     LogCommand($"VPN/proxy detected: {iPlayer.Name} ({iPlayer.Id} / {ip}) {FormatIpResult(check)}");
+                    InsertAlert("vpn", $"VPN/proxy: {iPlayer.Name} ({ip})");
                     if (config.KickVpn)
                     {
                         iPlayer.Kick("VPN / proxy connections are not allowed on this server");
@@ -1473,6 +1480,7 @@ namespace Oxide.Plugins
                                 : null
                         };
                         Post("/rest/v1/bans", ban.ToString());
+                        InsertAlert("ban", $"Banned {bName} ({bSteamid}) for {(duration.HasValue ? duration + " min" : "permanent")}: {reason}");
 
                         if (p != null)
                         {
@@ -1798,6 +1806,7 @@ namespace Oxide.Plugins
                                 ["created_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
                             };
                             Post("/rest/v1/bans", ban.ToString());
+                            InsertAlert("ban", $"Check verdict: banned {name ?? steamid}: {reason}");
 
                             if (verdictPlayer != null)
                             {
@@ -1934,6 +1943,7 @@ namespace Oxide.Plugins
                 if (newId.HasValue && newId.Value > 0)
                 {
                     activeChecks[steamid] = newId.Value;
+                    InsertAlert("check", $"{admin ?? "panel"} started a check on {name ?? steamid}");
                 }
 
                 done?.Invoke(newId);
@@ -2009,25 +2019,19 @@ namespace Oxide.Plugins
 
             CuiElementContainer container = new CuiElementContainer();
 
-            // Full-screen dim layer: clicking anywhere closes the notice.
+            // RustApp-style full-screen notice: dark overlay + centered text.
+            // No close button: the notice stays until the admin issues a verdict.
             container.Add(new CuiButton
             {
-                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "-500 -500", OffsetMax = "500 500" },
-                Button = { Color = HexToRustFormat("#1C1C1CEF"), Sprite = "assets/content/ui/gameui/attackheli/compass/ui.soft.radial.png", Close = CheckLayer, Command = "rap.checkclose" },
+                RectTransform = { AnchorMin = "0 0.5", AnchorMax = "1 1", OffsetMin = "-500 -500", OffsetMax = "500 500" },
+                Button = { Color = HexToRustFormat("#1C1C1C"), Sprite = "assets/content/ui/gameui/attackheli/compass/ui.soft.radial.png" },
                 Text = { Text = string.Empty, Align = TextAnchor.MiddleCenter }
             }, "Under", CheckLayer);
 
-            // Accent stripe at the top of the text block.
-            container.Add(new CuiPanel
-            {
-                RectTransform = { AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-260 78", OffsetMax = "260 86" },
-                Image = { Color = HexToRustFormat("#D0C6BD") }
-            }, CheckLayer, CheckLayer + ".Accent");
-
             container.Add(new CuiLabel
             {
-                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "60 0", OffsetMax = "-60 0" },
-                Text = { Text = lang.GetMessage("Check.NoticeText", this, sid).Replace("{0}", config.ContactMessage).Replace("{1}", config.ContactCommand), Align = TextAnchor.MiddleCenter, Font = "robotocondensed-regular.ttf", FontSize = 16, Color = HexToRustFormat("#D0C6BD") }
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMax = "0 0" },
+                Text = { Text = lang.GetMessage("Check.NoticeText", this, sid).Replace("{0}", config.ContactMessage).Replace("{1}", config.ContactCommand), Align = TextAnchor.MiddleCenter, Font = "robotocondensed-regular.ttf", FontSize = 16 }
             }, CheckLayer);
 
             CuiHelper.AddUi(player, container);
@@ -2183,8 +2187,8 @@ namespace Oxide.Plugins
             return 0;
         }
 
-        // Refreshes ping for every online player so the panel always shows a live
-        // value instead of the number that was written when they joined.
+        // Refreshes ping and map position for every online player so the panel always
+        // shows a live value instead of the number that was written when they joined.
         private void RefreshPings()
         {
             if (!IsConfigured())
@@ -2200,18 +2204,78 @@ namespace Oxide.Plugins
                         continue;
                     }
                     int ping = GetPing(player.Connection);
-                    if (ping <= 0)
-                    {
-                        continue;
-                    }
                     string steamid = null;
                     try { steamid = player.UserIDString; } catch { }
                     if (string.IsNullOrEmpty(steamid))
                     {
                         continue;
                     }
-                    Patch($"/rest/v1/players?steamid=eq.{steamid}&online=eq.true",
-                        new JObject { ["ping"] = ping }.ToString());
+
+                    var body = new JObject();
+                    if (ping > 0)
+                    {
+                        body["ping"] = ping;
+                    }
+                    // Map coordinates for the live map view.
+                    try
+                    {
+                        var pos = player.transform.position;
+                        body["pos_x"] = Mathf.RoundToInt(pos.x);
+                        body["pos_z"] = Mathf.RoundToInt(pos.z);
+                    }
+                    catch { }
+
+                    if (body.Count > 0)
+                    {
+                        Patch($"/rest/v1/players?steamid=eq.{steamid}&online=eq.true", body.ToString());
+                    }
+                }
+
+                // Sleeping players (bodies) are tracked separately so the panel can show
+                // who is logged out but still has a bag/body on the map.
+                RefreshSleepers();
+            }
+            catch { }
+        }
+
+        // Records all sleeping bodies so the panel can show "sleepers" like RustApp does.
+        private void RefreshSleepers()
+        {
+            try
+            {
+                foreach (BasePlayer player in BasePlayer.sleepingPlayerList)
+                {
+                    if (player == null)
+                    {
+                        continue;
+                    }
+                    string steamid = null;
+                    try { steamid = player.userID.ToString(); } catch { }
+                    if (string.IsNullOrEmpty(steamid))
+                    {
+                        continue;
+                    }
+                    string name = null;
+                    try { name = player.displayName; } catch { }
+
+                    int x = 0, z = 0;
+                    try
+                    {
+                        var pos = player.transform.position;
+                        x = Mathf.RoundToInt(pos.x);
+                        z = Mathf.RoundToInt(pos.z);
+                    }
+                    catch { }
+
+                    var body = new JObject
+                    {
+                        ["steamid"] = steamid,
+                        ["name"] = name,
+                        ["pos_x"] = x,
+                        ["pos_z"] = z,
+                        ["last_seen"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
+                    };
+                    Post("/rest/v1/sleepers?on_conflict=steamid", body.ToString(), upsert: true);
                 }
             }
             catch { }
@@ -2340,6 +2404,7 @@ namespace Oxide.Plugins
                 ["created_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
             };
             Post("/rest/v1/reports", report.ToString());
+            InsertAlert("report", $"Report: {reporterPlayer.Name} reported {(target != null ? target.displayName : targetId)} - {reason}");
 
             CuiHelper.DestroyUi(player, ReportLayer);
 
@@ -2658,6 +2723,7 @@ namespace Oxide.Plugins
                     ["created_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
                 };
                 Post("/rest/v1/reports", report.ToString());
+                InsertAlert("report", $"F7 report: {targetPlayer?.Name ?? target} - {reason}");
                 LogCommand($"F7 report: {target} - {reason}");
             }
             catch (Exception ex)
@@ -2675,7 +2741,28 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            SendMessage(player, config.ContactMessage);
+
+            string sid = player.UserIDString;
+
+            // No arguments: just show the Discord/contact message.
+            if (args == null || args.Length == 0)
+            {
+                SendMessage(player, string.IsNullOrEmpty(config.ContactMessage) ? lang.GetMessage("Contact.Error", this, sid) : config.ContactMessage);
+                return;
+            }
+
+            string contact = string.Join(" ", args);
+
+            // Save the contact into the active verification session so the admin
+            // sees it in the panel's check chat.
+            long? checkId = GetActiveCheckId(sid);
+            if (checkId.HasValue)
+            {
+                AddCheckEvent(checkId.Value, "contact", $"discord: {contact}");
+            }
+
+            SendMessage(player, lang.GetMessage("Contact.Sent", this, sid) + $"<color=#8393cd> {contact}</color>");
+            SendMessage(player, lang.GetMessage("Contact.SentWait", this, sid));
         }
 
         private static List<string> ParseQuoted(string s)
@@ -2763,6 +2850,22 @@ namespace Oxide.Plugins
                 ["created_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
             };
             Post("/rest/v1/kicks", body.ToString());
+        }
+
+        // Feeds the "Alerts" (Оповещения) tab: noteworthy server events.
+        private void InsertAlert(string kind, string text)
+        {
+            try
+            {
+                var body = new JObject
+                {
+                    ["kind"] = kind,
+                    ["text"] = text,
+                    ["created_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
+                };
+                Post("/rest/v1/alerts", body.ToString());
+            }
+            catch { }
         }
 
         private void LogCommand(string message)

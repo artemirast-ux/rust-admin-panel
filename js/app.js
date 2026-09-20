@@ -66,6 +66,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  document.querySelectorAll("[data-ctab]").forEach((tab) => {
+    tab.addEventListener("click", () => setChatTab(tab.dataset.ctab));
+  });
+
+  const cs = document.getElementById("chatSearch");
+  if (cs) {
+    cs.addEventListener("input", (e) => {
+      chatSearchQuery = e.target.value;
+      renderChatPeers();
+    });
+  }
+
+  const btnPmChat = document.getElementById("btnPmChatSend");
+  if (btnPmChat) {
+    btnPmChat.addEventListener("click", sendPmChat);
+  }
+  const pmChatIn = document.getElementById("pmChatInput");
+  if (pmChatIn) {
+    pmChatIn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendPmChat();
+    });
+  }
+
   document.getElementById("btnPmSend").addEventListener("click", sendPm);
   document.getElementById("pmText").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendPm();
@@ -157,6 +180,12 @@ async function refreshAll() {
   if (currentView === "killanalysis") loadKillAnalysis();
   if (currentView === "history") loadHistoryTab();
   if (currentView === "ipchecks") loadIpChecks();
+  if (currentView === "map") loadMap();
+  if (currentView === "sleepers") loadSleepers();
+  if (currentView === "alerts") loadAlerts();
+  if (currentView === "stats") loadStats();
+  if (currentView === "audit") loadAudit();
+  if (currentView === "staff") loadStaff();
 }
 
 /* ---------- Server status ---------- */
@@ -222,6 +251,12 @@ async function loadDashboard() {  // NOTE: with head:true the count comes back N
   const activeCount = cChecks ?? 0;
   chkBadge.textContent = activeCount;
   chkBadge.classList.toggle("hidden", activeCount === 0);
+
+  const { count: cAlerts } = await sb.from("alerts").select("id", { count: "exact", head: true });
+  const alBadge = document.getElementById("alertsBadge");
+  const alCount = cAlerts ?? 0;
+  alBadge.textContent = alCount;
+  alBadge.classList.toggle("hidden", alCount === 0);
 
   loadOnlineChart();
 
@@ -749,6 +784,9 @@ async function loadCheckEvents() {
       if (ev.kind === "death") {
         return `<div class="ev sys death">💀 ${esc(ev.text)} <span class="time">${t}</span></div>`;
       }
+      if (ev.kind === "contact") {
+        return `<div class="ev sys contact">📨 ${esc(ev.text)} <span class="time">игрок · ${t}</span></div>`;
+      }
       return `<div class="ev sys">${esc(ev.text)} <span class="time">${t}</span></div>`;
     })
     .join("");
@@ -1139,7 +1177,12 @@ async function loadOnlineChart() {
   `;
 }
 
-/* ---------- Chat ---------- */
+/* ---------- Chat (messenger-style: players list + conversation) ---------- */
+
+let chatPeers = []; // distinct players from chat logs
+let chatPeerSid = null; // selected player in the DM tab
+let chatTab = "general";
+let chatSearchQuery = "";
 
 async function loadChat() {
   const { data, error } = await sb
@@ -1148,23 +1191,36 @@ async function loadChat() {
     .order("created_at", { ascending: false })
     .limit(300);
 
-  const el = document.getElementById("chatLog");
+  const log = document.getElementById("chatLog");
   if (error || !data) {
-    el.innerHTML = '<div class="empty">Ошибка загрузки</div>';
-    return;
-  }
-  if (!data.length) {
-    el.innerHTML = '<div class="empty">Сообщений нет</div>';
+    if (log) log.innerHTML = '<div class="empty">Ошибка загрузки</div>';
     return;
   }
 
-  // newest at the bottom, like a real chat
-  el.innerHTML = data
-    .slice()
-    .reverse()
-    .map(
-      (m) =>
-        `<div class="chat-msg" data-sid="${esc(m.steamid || "")}" data-name="${esc(m.name || "")}">
+  // Build the player list (peers) for the DM tab.
+  const seen = {};
+  chatPeers = [];
+  data.forEach((m) => {
+    if (!m.steamid || seen[m.steamid]) return;
+    seen[m.steamid] = true;
+    chatPeers.push({ steamid: m.steamid, name: m.name, last: m.created_at });
+  });
+
+  renderChatPeers();
+
+  if (!data.length) {
+    if (log) log.innerHTML = '<div class="empty">Сообщений пока нет</div>';
+    return;
+  }
+
+  // General chat: newest at the bottom, like a real chat.
+  if (log) {
+    log.innerHTML = data
+      .slice()
+      .reverse()
+      .map(
+        (m) => `
+        <div class="chat-msg" data-sid="${esc(m.steamid || "")}" data-name="${esc(m.name || "")}">
           <div class="avatar" style="background:${avatarColor(m.name)}">${initials(m.name)}</div>
           <div class="body">
             <div class="meta">
@@ -1174,18 +1230,124 @@ async function loadChat() {
             <div class="text">${esc(m.message)}</div>
           </div>
         </div>`
+      )
+      .join("");
+    log.scrollTop = log.scrollHeight;
+
+    // Right-click a message -> reply in DM / mute
+    log.querySelectorAll(".chat-msg[data-sid]").forEach((row) => {
+      row.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        chatCtxMenu(e.clientX, e.clientY, row.dataset.sid, row.dataset.name);
+      });
+      row.addEventListener("click", () => {
+        openDmWith(row.dataset.sid, row.dataset.name);
+      });
+    });
+  }
+
+  if (chatTab === "player" && chatPeerSid) {
+    loadDmHistory(chatPeerSid);
+  }
+}
+
+// Renders the left-hand player list (peers).
+function renderChatPeers() {
+  const el = document.getElementById("chatPeers");
+  if (!el) return;
+
+  const q = chatSearchQuery.trim().toLowerCase();
+  const list = q ? chatPeers.filter((p) => String(p.name || "").toLowerCase().includes(q)) : chatPeers;
+
+  if (!list.length) {
+    el.innerHTML = '<div class="empty">Никого не найдено</div>';
+    return;
+  }
+
+  el.innerHTML = list
+    .map(
+      (p) => `
+      <div class="chat-peer ${p.steamid === chatPeerSid ? "active" : ""}" data-sid="${esc(p.steamid)}">
+        <span class="avatar small" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
+        <div class="chat-peer-info">
+          <b>${esc(p.name) || "—"}</b>
+          <span class="muted small">${fmtTime(p.last)}</span>
+        </div>
+      </div>`
     )
     .join("");
 
-  el.scrollTop = el.scrollHeight;
-
-  // Right-click ANYWHERE on a chat line (name, avatar or the message itself)
-  el.querySelectorAll(".chat-msg[data-sid]").forEach((row) => {
-    row.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      chatCtxMenu(e.clientX, e.clientY, row.dataset.sid, row.dataset.name);
+  el.querySelectorAll(".chat-peer").forEach((row) => {
+    row.addEventListener("click", () => {
+      const p = chatPeers.find((x) => x.steamid === row.dataset.sid);
+      if (p) openDmWith(p.steamid, p.name);
     });
   });
+}
+
+// Opens the DM tab with a specific player.
+function openDmWith(steamid, name) {
+  chatPeerSid = steamid;
+  switchView("chat");
+  setChatTab("player");
+
+  const h = document.getElementById("chatHeader");
+  h.innerHTML = `
+    <span class="avatar small" style="background:${avatarColor(name)}">${initials(name)}</span>
+    <div>
+      <b>${esc(name) || "—"}</b>
+      <span class="mono muted small" style="margin-left:6px">${esc(steamid)}</span>
+    </div>`;
+
+  document.getElementById("pmChatInput").focus();
+  renderChatPeers();
+  loadDmHistory(steamid);
+}
+
+// Loads the DM history with the selected player.
+async function loadDmHistory(steamid) {
+  const el = document.getElementById("pmLog");
+  if (!el || !steamid) return;
+
+  const { data } = await sb
+    .from("chat_logs")
+    .select("*")
+    .eq("steamid", steamid)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (!data || !data.length) {
+    el.innerHTML = '<div class="empty">Этот игрок ещё ничего не писал в чат</div>';
+    return;
+  }
+
+  el.innerHTML = data
+    .slice()
+    .reverse()
+    .map(
+      (m) => `
+      <div class="chat-msg">
+        <div class="avatar" style="background:${avatarColor(m.name)}">${initials(m.name)}</div>
+        <div class="body">
+          <div class="meta">
+            <span class="nick">${esc(m.name) || "—"}</span>
+            <span class="time">${fmtTime(m.created_at)}</span>
+          </div>
+          <div class="text">${esc(m.message)}</div>
+        </div>
+      </div>`
+    )
+    .join("");
+  el.scrollTop = el.scrollHeight;
+}
+
+function setChatTab(name) {
+  chatTab = name;
+  document.querySelectorAll("[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
+  document.querySelectorAll(".ctab").forEach((c) => c.classList.toggle("active", c.id === "ctab-" + name));
+  if (name === "player" && chatPeerSid) {
+    loadDmHistory(chatPeerSid);
+  }
 }
 
 function chatCtxMenu(x, y, steamid, name) {
@@ -1201,6 +1363,29 @@ async function sendBroadcast(message) {
   if (ok) {
     input.value = "";
     refreshAll();
+  }
+}
+
+// Sends a private message from the chat tab.
+async function sendPmChat() {
+  if (!chatPeerSid) {
+    alert("Сначала выберите игрока в списке слева");
+    return;
+  }
+  const input = document.getElementById("pmChatInput");
+  const text = input.value.trim();
+  if (!text) return;
+
+  const peer = chatPeers.find((x) => x.steamid === chatPeerSid);
+  const ok = await sendCommand({
+    command: "say",
+    steamid: chatPeerSid,
+    name: peer ? peer.name : null,
+    message: text,
+  });
+  if (ok) {
+    input.value = "";
+    setTimeout(() => loadDmHistory(chatPeerSid), 900);
   }
 }
 
@@ -1463,6 +1648,268 @@ async function loadActions() {
         <td><span class="tag ${c.status === "done" ? "ok" : c.status === "failed" ? "danger" : "warn"}">${c.status}</span></td>
         <td class="muted">${esc(c.result || "")}</td>
         <td>${fmtTime(c.created_at)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+/* ---------- Map (players positions) ---------- */
+
+// Rust world size in Unity units. Full map = 6000; smaller maps are 4500/3500 etc.
+// Positions are centered on (0,0), so x/z range roughly -WORLD_SIZE/2..WORLD_SIZE/2.
+const WORLD_SIZE = 6000;
+
+async function loadMap() {
+  const { data, error } = await sb
+    .from("players")
+    .select("steamid,name,pos_x,pos_z,is_vpn")
+    .eq("online", true);
+
+  const el = document.getElementById("mapCanvas");
+  if (!el) return;
+
+  if (error || !data) {
+    el.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(error?.message || "")}</div>`;
+    return;
+  }
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">Сейчас на сервере никого нет</div>';
+    document.getElementById("mapLegend").textContent = "";
+    return;
+  }
+
+  const half = WORLD_SIZE / 2;
+  el.innerHTML = data
+    .map((p) => {
+      const x = p.pos_x ?? 0;
+      const z = p.pos_z ?? 0;
+      // Unity z grows to the south; the in-game map north is -z.
+      const left = Math.max(0, Math.min(100, ((x + half) / WORLD_SIZE) * 100));
+      const top = Math.max(0, Math.min(100, ((-z + half) / WORLD_SIZE) * 100));
+      return `<div class="map-dot ${p.is_vpn ? "vpn" : ""}" style="left:${left}%;top:${top}%;background:${avatarColor(p.name)}" title="${esc(p.name)} (${x}, ${z})" data-sid="${esc(p.steamid)}">${initials(p.name)}</div>`;
+    })
+    .join("");
+
+  el.querySelectorAll(".map-dot").forEach((d) => {
+    d.addEventListener("click", () => openPlayerCard(d.dataset.sid));
+    d.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      playerCtxMenu(e.clientX, e.clientY, d.dataset.sid, d.title.split(" (")[0]);
+    });
+  });
+
+  const vpnN = data.filter((p) => p.is_vpn).length;
+  document.getElementById("mapLegend").textContent = `${data.length} игроков онлайн · ${vpnN} с VPN · клик — профиль, правый клик — меню`;
+}
+
+/* ---------- Sleepers ---------- */
+
+async function loadSleepers() {
+  const { data, error } = await sb
+    .from("sleepers")
+    .select("*")
+    .order("last_seen", { ascending: false })
+    .limit(200);
+
+  const body = document.getElementById("sleepersBody");
+  if (error || !data) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">Спящих игроков нет</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (s) => `
+      <tr>
+        <td><span class="avatar small" style="background:${avatarColor(s.name)}">${initials(s.name)}</span> ${esc(s.name) || "—"}</td>
+        <td class="mono">${esc(s.steamid)}</td>
+        <td class="mono">${s.pos_x ?? 0}, ${s.pos_z ?? 0}</td>
+        <td>${fmtTime(s.last_seen)}</td>
+        <td>
+          <button class="btn small" onclick="openPlayerCard('${esc(s.steamid)}')">Подробнее</button>
+          <button class="btn small danger" onclick="openBanModal('${esc(s.steamid)}','${esc(s.name)}')">Бан</button>
+        </td>
+      </tr>`
+    )
+    .join("");
+}
+
+/* ---------- Alerts ---------- */
+
+const ALERT_META = {
+  vpn: { icon: "🛡", label: "VPN" },
+  report: { icon: "🚩", label: "Репорт" },
+  ban: { icon: "🔨", label: "Бан" },
+  check: { icon: "🔍", label: "Проверка" },
+};
+
+async function loadAlerts() {
+  const { data, error } = await sb
+    .from("alerts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  const el = document.getElementById("alertsList");
+  if (error || !data) {
+    el.innerHTML = '<div class="empty">Ошибка загрузки</div>';
+    return;
+  }
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">Оповещений пока нет</div>';
+    return;
+  }
+
+  el.innerHTML = data
+    .map((a) => {
+      const m = ALERT_META[a.kind] || { icon: "ℹ", label: a.kind || "Событие" };
+      return `
+      <div class="alert-item ${esc(a.kind)}">
+        <div class="alert-ico">${m.icon}</div>
+        <div class="alert-text">
+          <span class="alert-kind">${m.label}</span><br />
+          ${esc(a.text)}
+        </div>
+        <span class="muted small" style="white-space:nowrap">${fmtTime(a.created_at)}</span>
+      </div>`;
+    })
+    .join("");
+}
+
+/* ---------- Statistics ---------- */
+
+async function loadStats() {
+  const [
+    { count: cPlayers },
+    { count: cBans },
+    { count: cReports },
+    { count: cKills },
+    { count: cSleepers },
+    { count: cMutes },
+  ] = await Promise.all([
+    sb.from("players").select("id", { count: "exact", head: true }),
+    sb.from("bans").select("id", { count: "exact", head: true }).eq("active", true),
+    sb.from("reports").select("id", { count: "exact", head: true }),
+    sb.from("kills").select("id", { count: "exact", head: true }),
+    sb.from("sleepers").select("id", { count: "exact", head: true }),
+    sb.from("mutes").select("id", { count: "exact", head: true }).eq("active", true),
+  ]);
+
+  document.getElementById("statsCards").innerHTML = [
+    { label: "Всего игроков", value: cPlayers ?? 0 },
+    { label: "Активных банов", value: cBans ?? 0, cls: "danger" },
+    { label: "Репортов", value: cReports ?? 0, cls: "warn" },
+    { label: "Убийств", value: cKills ?? 0 },
+    { label: "Спальников", value: cSleepers ?? 0 },
+    { label: "Активных мутов", value: cMutes ?? 0 },
+  ]
+    .map((c) => `<div class="stat-card"><div class="label ${c.cls || ""}">${c.label}</div><div class="value">${c.value}</div></div>`)
+    .join("");
+
+  // Top killers (client-side grouping over the last 500 kills)
+  const { data: kills } = await sb
+    .from("kills")
+    .select("attacker_steamid,attacker_name")
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  const counts = {};
+  (kills || []).forEach((k) => {
+    if (!k.attacker_steamid) return;
+    counts[k.attacker_steamid] = counts[k.attacker_steamid] || { name: k.attacker_name || "—", n: 0 };
+    counts[k.attacker_steamid].n++;
+  });
+  const top = Object.entries(counts)
+    .sort((a, b) => b[1].n - a[1].n)
+    .slice(0, 8);
+
+  document.getElementById("topKillers").innerHTML = top.length
+    ? top
+        .map(
+          ([sid, v], i) => `
+        <div class="top-row" style="cursor:pointer" onclick="openPlayerCard('${esc(sid)}')">
+          <span class="top-num">${i + 1}</span>
+          <span class="avatar small" style="background:${avatarColor(v.name)}">${initials(v.name)}</span>
+          <span>${esc(v.name)}</span>
+          <span class="top-count">${v.n}</span>
+        </div>`
+        )
+        .join("")
+    : '<div class="empty">Убийств пока не было</div>';
+
+  // Server block
+  const { data: st } = await sb.from("server_status").select("*").eq("id", 1).maybeSingle();
+  const ago = st ? Math.round((Date.now() - new Date(st.last_heartbeat).getTime()) / 1000) : null;
+  document.getElementById("statsServer").innerHTML = st
+    ? `
+      <div class="prow"><span class="pkey">Название</span><span>${esc(st.hostname) || "Rust Server"}</span></div>
+      <div class="prow"><span class="pkey">Игроков онлайн</span><span><b>${st.players_online}</b> / ${st.max_players}</span></div>
+      <div class="prow"><span class="pkey">FPS</span><span><b>${st.fps}</b></span></div>
+      <div class="prow"><span class="pkey">Сервер</span><span>${ago !== null && ago < 90 ? '<span class="tag ok">в сети</span>' : `<span class="tag warn">нет связи ${ago}с</span>`}</span></div>`
+    : '<div class="empty">Сервер не в сети</div>';
+}
+
+/* ---------- Audit log ---------- */
+
+async function loadAudit() {
+  const { data, error } = await sb
+    .from("commands")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  const body = document.getElementById("auditBody");
+  if (error || !data) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">Ошибка загрузки</td></tr>';
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">Действий пока не было</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (c) => `
+      <tr>
+        <td><span class="tag ${c.command === "ban" ? "danger" : c.command === "kick" ? "warn" : "muted"}">${c.command}</span></td>
+        <td>${esc(c.name) || esc(c.steamid) || "—"}</td>
+        <td>${esc(c.reason || c.message || "")}</td>
+        <td>${esc(c.admin)}</td>
+        <td><span class="tag ${c.status === "done" ? "ok" : c.status === "failed" ? "danger" : "warn"}">${c.status}</span></td>
+        <td class="muted">${esc(c.result || "")}</td>
+        <td>${fmtTime(c.created_at)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+/* ---------- Staff (admins) ---------- */
+
+async function loadStaff() {
+  const { data, error } = await sb.from("admins").select("*").order("created_at", { ascending: true });
+
+  const body = document.getElementById("staffBody");
+  if (error || !data) {
+    body.innerHTML = '<tr><td colspan="3" class="empty">Ошибка загрузки</td></tr>';
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="3" class="empty">Сотрудников нет</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (a) => `
+      <tr>
+        <td>${esc(a.email)}</td>
+        <td><span class="tag ${a.role === "owner" ? "warn" : "muted"}">${esc(a.role)}</span></td>
+        <td>${fmtDate(a.created_at)}</td>
       </tr>`
     )
     .join("");

@@ -193,6 +193,23 @@ create table if not exists check_events (
   created_at timestamptz not null default now()
 );
 
+-- Sleeping bodies ("sleepers"), so the panel can show them on the map like RustApp.
+create table if not exists sleepers (
+  steamid    text primary key,
+  name       text,
+  pos_x      int  not null default 0,
+  pos_z      int  not null default 0,
+  last_seen  timestamptz not null default now()
+);
+
+-- Alerts: noteworthy events for the "Оповещения" tab (VPN, reports, bans, checks)
+create table if not exists alerts (
+  id         bigint primary key generated always as identity,
+  kind       text not null,                 -- vpn | report | ban | check
+  text       text not null,
+  created_at timestamptz not null default now()
+);
+
 -- Helper: increment connection counter (called by plugin via rpc)
 create or replace function increment_connections(p_steamid text)
 returns void
@@ -231,6 +248,9 @@ create index if not exists idx_checks_steamid on checks (steamid);
 create index if not exists idx_checks_status  on checks (status);
 create index if not exists idx_check_events_check on check_events (check_id, created_at);
 create index if not exists idx_online_history_created on online_history (created_at desc);
+create index if not exists idx_alerts_created  on alerts (created_at desc);
+create index if not exists idx_alerts_kind      on alerts (kind);
+create index if not exists idx_sleepers_last_seen on sleepers (last_seen desc);
 
 -- ============================================================================
 -- Row Level Security: only panel admins (by email) can read/write from site.
@@ -252,6 +272,8 @@ alter table ip_checks       enable row level security;
 alter table checks          enable row level security;
 alter table check_events    enable row level security;
 alter table online_history  enable row level security;
+alter table sleepers        enable row level security;
+alter table alerts          enable row level security;
 
 do $$
 declare
@@ -260,7 +282,7 @@ begin
   foreach t in array array[
     'admins','players','bans','mutes','kicks','reports','kills',
     'chat_logs','connection_logs','commands','server_status','ip_checks',
-    'checks','check_events','online_history'
+    'checks','check_events','online_history','sleepers','alerts'
   ]
   loop
     execute format(
@@ -281,6 +303,8 @@ alter table players add column if not exists isp          text;
 alter table players add column if not exists asn          text;
 alter table players add column if not exists proxy_type   text;
 alter table kills add column if not exists headshot       boolean not null default false;
+alter table players add column if not exists pos_x         int  not null default 0;
+alter table players add column if not exists pos_z         int  not null default 0;
 
 -- ============================================================================
 -- After creating your account in Supabase -> Authentication -> Users -> Add user,
