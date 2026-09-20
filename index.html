@@ -23,32 +23,68 @@
 
   <div id="app" class="hidden">
     <aside class="sidebar">
-      <div class="brand">RustAdminPanel</div>
-      <nav>
-        <a href="#" class="nav-link active" data-view="dashboard">Обзор</a>
-        <a href="#" class="nav-link" data-view="staff">Команда</a>
-        <a href="#" class="nav-link" data-view="alerts">Оповещения <span id="alertsBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="bans">Блокировки</a>
-        <a href="#" class="nav-link" data-view="checks">Проверки <span id="checksBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="reports">Репорты <span id="reportsBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="history">История</a>
-        <a href="#" class="nav-link" data-view="stats">Статистика</a>
-        <a href="#" class="nav-link" data-view="audit">Лог активности</a>
-        <a href="#" class="nav-link" data-view="drawings">Рисунки</a>
-        <a href="#" class="nav-link" data-view="settings">Разрешения</a>
-        <a href="#" class="nav-link" data-view="mutes">Муты</a>
-        <div class="nav-sect">Дополнительно</div>
-        <a href="#" class="nav-link" data-view="players">Игроки</a>
-        <a href="#" class="nav-link" data-view="map">Карта</a>
-        <a href="#" class="nav-link" data-view="chat">Чат</a>
-        <a href="#" class="nav-link" data-view="sleepers">Спальники</a>
-        <a href="#" class="nav-link" data-view="killanalysis">Подозрения <span id="suspiciousBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="ipchecks">IP и VPN</a>
-        <a href="#" class="nav-link" data-view="servers">Серверы</a>
-        <a href="#" class="nav-link" data-view="integrations">Интеграции</a>
-        <a href="#" class="nav-link" data-view="general">Общее</a>
-      </nav>
-      <button id="btnLogout" class="btn">Выйти</button>
+      <div class="sidebar-inner">
+        <div class="sidebar-top">
+          <div class="project-selector">
+            <span class="project-avatar"><span class="project-logo">IR</span></span>
+            <span class="project-name">IgnorRust</span>
+          </div>
+          <div class="sidebar-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <span>Поиск...</span>
+          </div>
+        </div>
+        <nav class="nav-sections" aria-label="Навигация">
+          <details class="nav-block" open>
+            <summary class="nav-block-title">Модерация</summary>
+            <div class="nav-items">
+              <a href="#" class="nav-link" data-view="players"><span class="nav-ico">👥</span>Игроки</a>
+              <a href="#" class="nav-link" data-view="chat"><span class="nav-ico">💬</span>Чат</a>
+              <a href="#" class="nav-link" data-view="reports"><span class="nav-ico">🚩</span>Репорты <span id="reportsBadge" class="badge hidden"></span></a>
+              <a href="#" class="nav-link" data-view="checks"><span class="nav-ico">🛡</span>Проверки <span id="checksBadge" class="badge hidden"></span></a>
+              <a href="#" class="nav-link" data-view="alerts"><span class="nav-ico">🔔</span>Оповещения <span id="alertsBadge" class="badge hidden"></span></a>
+              <a href="#" class="nav-link" data-view="mutes"><span class="nav-ico">🔇</span>Муты</a>
+              <a href="#" class="nav-link" data-view="bans"><span class="nav-ico">🔒</span>Блокировки</a>
+            </div>
+          </details>
+          <details class="nav-block" open>
+            <summary class="nav-block-title">Управление</summary>
+            <div class="nav-items">
+              <a href="#" class="nav-link" data-view="dashboard"><span class="nav-ico">📊</span>Обзор</a>
+              <a href="#" class="nav-link" data-view="map"><span class="nav-ico">🗺</span>Карта</a>
+              <a href="#" class="nav-link" data-view="stats"><span class="nav-ico">📈</span>Статистика</a>
+              <a href="#" class="nav-link" data-view="history"><span class="nav-ico">🕘</span>История</a>
+              <a href="#" class="nav-link" data-view="audit"><span class="nav-ico">📜</span>Журнал аудита</a>
+              <a href="#" class="nav-link" data-view="sleepers"><span class="nav-ico">😴</span>Спальники</a>
+              <a href="#" class="nav-link" data-view="killanalysis"><span class="nav-ico">🎯</span>Подозрения <span id="suspiciousBadge" class="badge hidden"></span></a>
+              <a href="#" class="nav-link" data-view="ipchecks"><span class="nav-ico">🌐</span>IP и VPN</a>
+            </div>
+          </details>
+          <details class="nav-block" open>
+            <summary class="nav-block-title">Проверка</summary>
+            <div class="nav-items">
+              <a href="#" class="nav-link" data-view="anticheat"><span class="nav-ico">📡</span>Античит</a>
+            </div>
+          </details>
+          <details class="nav-block" open>
+            <summary class="nav-block-title">Проект</summary>
+            <div class="nav-items">
+              <a href="#" class="nav-link" data-view="general"><span class="nav-ico">📦</span>Общее</a>
+              <a href="#" class="nav-link" data-view="staff"><span class="nav-ico">🧑‍💼</span>Сотрудники</a>
+              <a href="#" class="nav-link" data-view="servers"><span class="nav-ico">🖥</span>Серверы</a>
+              <a href="#" class="nav-link" data-view="integrations"><span class="nav-ico">🔌</span>Интеграции</a>
+              <a href="#" class="nav-link" data-view="settings"><span class="nav-ico">🔐</span>Разрешения</a>
+              <a href="#" class="nav-link" data-view="drawings"><span class="nav-ico">🎨</span>Рисунки</a>
+            </div>
+          </details>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="sidebar-divider"></div>
+          <div class="sidebar-footer-actions">
+            <button id="btnLogout" class="footer-btn is-red" title="Выйти">⏻</button>
+          </div>
+        </div>
+      </div>
     </aside>
 
     <main class="content">
@@ -81,7 +117,20 @@
         <div class="panel">
           <h3>Игроки на сервере</h3>
           <input id="playersSearch" class="search-input" placeholder="Поиск по нику…" autocomplete="off" />
-          <div id="playersGrid" class="players-grid"></div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Игрок</th>
+                <th>Тип</th>
+                <th>IP адрес</th>
+                <th>Страна</th>
+                <th>Провайдер</th>
+                <th>Пинг</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="playersBody"></tbody>
+          </table>
         </div>
       </section>
 
@@ -314,6 +363,27 @@
 
       <section id="view-drawings" class="view">
         <div class="panel"><div class="stub"><div class="stub-icon">🎨</div><h3>Рисунки</h3><p>Заметки и рисунки на карте сервера — скоро.</p></div></div>
+      </section>
+
+      <section id="view-anticheat" class="view">
+        <div class="panel">
+          <h3>Античит</h3>
+          <p class="muted small" style="margin-bottom:12px">Анализ убийств: кто убивает слишком быстро, точно или с необычной дистанции. Клик по строке — профиль игрока.</p>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Игрок</th>
+                <th>Убийств</th>
+                <th>Хедшоты</th>
+                <th>Дистанция</th>
+                <th>Серия</th>
+                <th>Флаги</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="anticheatBody"></tbody>
+          </table>
+        </div>
       </section>
 
     </main>

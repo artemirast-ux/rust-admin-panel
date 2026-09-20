@@ -306,6 +306,23 @@ alter table kills add column if not exists headshot       boolean not null defau
 alter table players add column if not exists pos_x         int  not null default 0;
 alter table players add column if not exists pos_z         int  not null default 0;
 
+-- Steam / profile badges (populated by the plugin when a Steam Web API key is set)
+alter table players add column if not exists is_pirate            boolean;
+alter table players add column if not exists steam_created        timestamptz;
+alter table players add column if not exists steam_hours_2week    int;
+alter table players add column if not exists rust_hours_total     int;
+alter table players add column if not exists spacewar_hours_total int;
+alter table players add column if not exists vac_bans             int;
+alter table players add column if not exists game_bans            int;
+alter table players add column if not exists steam_profile_public boolean;
+alter table players add column if not exists steam_checked_at     timestamptz;
+
+-- Live status badges (written on every heartbeat)
+alter table players add column if not exists is_alive           boolean;
+alter table players add column if not exists raid_blocked       boolean;
+alter table players add column if not exists language           text;
+alter table players add column if not exists ignore_reports_until timestamptz;
+
 -- ============================================================================
 -- After creating your account in Supabase -> Authentication -> Users -> Add user,
 -- run this (replace with your email) to give yourself panel access:

@@ -178,6 +178,7 @@ async function refreshAll() {
   if (currentView === "mutes") loadMutes();
   if (currentView === "chat") loadChat();
   if (currentView === "killanalysis") loadKillAnalysis();
+  if (currentView === "anticheat") loadAnticheat();
   if (currentView === "history") loadHistoryTab();
   if (currentView === "ipchecks") loadIpChecks();
   if (currentView === "map") loadMap();
@@ -303,15 +304,15 @@ async function loadPlayers() {
   ]);
   allPlayers = all || [];
 
-  const el = document.getElementById("playersGrid");
+  const el = document.getElementById("playersBody");
   if (!el) return;
 
   if (error || !data) {
-    el.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(error?.message || "")}</div>`;
+    el.innerHTML = `<tr><td colspan="7" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
     return;
   }
   if (!data.length) {
-    el.innerHTML = '<div class="empty">Сейчас на сервере никого нет</div>';
+    el.innerHTML = '<tr><td colspan="7" class="empty">Сейчас на сервере никого нет</td></tr>';
     return;
   }
 
@@ -319,7 +320,7 @@ async function loadPlayers() {
   const list = q ? data.filter((p) => String(p.name || "").toLowerCase().includes(q)) : data;
 
   if (!list.length) {
-    el.innerHTML = `<div class="empty">Никого не найдено по запросу «${esc(playersQuery)}»</div>`;
+    el.innerHTML = `<tr><td colspan="7" class="empty">Никого не найдено по запросу «${esc(playersQuery)}»</td></tr>`;
     return;
   }
 
@@ -346,38 +347,45 @@ async function loadPlayers() {
       const dups = dupCount(p);
       const ping = p.ping ?? 0;
       const pingCls = ping === 0 ? "muted" : ping < 80 ? "ok" : ping < 160 ? "warn" : "danger";
-      const country = p.country_code ? `${countryFlag(p.country_code)} ${esc(p.country_code.toUpperCase())}` : "🌍 —";
+      const country = p.country_code
+        ? `${countryFlag(p.country_code)} ${esc(p.country || p.country_code.toUpperCase())}`
+        : "—";
+      const typeTag =
+        p.is_pirate === true
+          ? '<span class="tag danger">Пират</span>'
+          : p.is_pirate === false
+          ? '<span class="tag ok">Лицензия</span>'
+          : '<span class="tag muted">Неизвестно</span>';
 
       return `
-      <div class="pcard" data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}">
-        <div class="pcard-top">
-          <span class="avatar" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
-          <div class="pcard-name">
-            <b>${esc(p.name) || "—"}</b>
-            <span class="muted small">${country}</span>
-          </div>
-          <span class="ping-tag ${pingCls}">${ping} мс</span>
-        </div>
-        <div class="pcard-flags">
+      <tr style="cursor:pointer" data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}">
+        <td>
+          <span class="avatar small" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
+          <b>${esc(p.name) || "—"}</b>
           ${p.is_vpn ? '<span class="tag vpn">VPN</span>' : p.vpn_checked ? '<span class="tag ok">без VPN</span>' : ""}
-          ${dups ? `<button class="tag dup" title="Другие аккаунты с таким же IP или компьютером" onclick="event.stopPropagation();showDuplicates('${p.steamid}')">${dups + 1} аккаунта</button>` : ""}
-        </div>
-        <div class="pcard-actions">
-          <button class="btn small" onclick="event.stopPropagation();openPlayerCard('${p.steamid}')">Подробнее</button>
+          ${dups ? `<button class="tag dup" title="Другие аккаунты с таким же IP или компьютером" onclick="event.stopPropagation();showDuplicates('${p.steamid}')">${dups + 1} акк.</button>` : ""}
+          <div class="mono muted">${esc(p.steamid)}</div>
+        </td>
+        <td>${typeTag}</td>
+        <td class="mono small">${esc(p.ip) || "—"}</td>
+        <td>${country}</td>
+        <td class="small">${esc(p.isp) || "—"}</td>
+        <td><span class="ping-tag ${pingCls}">${ping} мс</span></td>
+        <td class="row-actions">
           <button class="btn small warn" onclick="event.stopPropagation();startCheck('${esc(p.steamid)}','${esc(p.name)}')">Проверка</button>
           <button class="btn small" onclick="event.stopPropagation();openMuteModal('${esc(p.steamid)}','${esc(p.name)}')">Мут</button>
           <button class="btn small danger" onclick="event.stopPropagation();openBanModal('${esc(p.steamid)}','${esc(p.name)}')">Бан</button>
-        </div>
-      </div>`;
+        </td>
+      </tr>`;
     })
     .join("");
 
-  // Click anywhere on a card -> full player details
-  el.querySelectorAll(".pcard").forEach((card) => {
-    card.addEventListener("click", () => openPlayerCard(card.dataset.sid));
-    card.addEventListener("contextmenu", (e) => {
+  // Click anywhere on a row -> full player details, right click -> quick menu
+  el.querySelectorAll("tr[data-sid]").forEach((row) => {
+    row.addEventListener("click", () => openPlayerCard(row.dataset.sid));
+    row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      playerCtxMenu(e.clientX, e.clientY, card.dataset.sid, card.dataset.name);
+      playerCtxMenu(e.clientX, e.clientY, row.dataset.sid, row.dataset.name);
     });
   });
 }
@@ -388,9 +396,30 @@ function playerCtxMenu(x, y, steamid, name) {
     { label: "Начать проверку", fn: () => startCheck(steamid, name) },
     { label: "Ответить в ЛС", fn: () => openPmModal(steamid, name) },
     { label: "Замутить", fn: () => openMuteModal(steamid, name) },
+    { label: "Игнорировать жалобы", fn: () => ignoreReports(steamid, name) },
     { label: "Заблокировать", fn: () => openBanModal(steamid, name) },
     { label: "Копировать SteamID", fn: () => copyText(steamid, "SteamID скопирован") },
   ]);
+}
+
+// Stops new reports against this player from surfacing (mirrors the "ignore
+// reports" tag). Empty answer = permanent, like the reference panel's forever tag.
+async function ignoreReports(steamid, name) {
+  if (!steamid) return;
+  const days = prompt(`Сколько дней игнорировать жалобы на «${name}»?\nОставьте поле пустым — навсегда.`, "");
+  if (days === null) return;
+
+  const n = parseInt(days, 10);
+  const mins = days === "" || !(n > 0) ? null : n * 24 * 60;
+
+  const sent = await sendCommand({ command: "ignorereports", steamid, name, duration_minutes: mins });
+  if (!sent) return;
+
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = mins ? `Жалобы на «${name}» игнорируются ${n} дн.` : `Жалобы на «${name}» игнорируются навсегда`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
 }
 
 // Shows players that share an IP or HWID with the given player (multi-account check)
@@ -439,20 +468,60 @@ async function openPlayerCard(steamid) {
     (x) => x.steamid !== steamid && ((p.ip && x.ip === p.ip) || (!!p.hwid && x.hwid === p.hwid))
   );
 
-  // Status badges, like RustApp shows under a player's name
+  // Status badges, like the reference panel shows under a player's name
   const badges = [];
   if (p.is_vpn) badges.push('<span class="tag vpn">VPN</span>');
   if (p.vpn_checked && !p.is_vpn) badges.push('<span class="tag ok">без VPN</span>');
   if (p.muted) badges.push('<span class="tag warn">Мут</span>');
   if (p.is_banned) badges.push('<span class="tag danger">Заблокирован</span>');
   if (p.being_checked) badges.push('<span class="tag warn">На проверке</span>');
+  if (p.is_pirate === true) badges.push('<span class="tag danger">Пират</span>');
+  if ((p.vac_bans ?? 0) >= 1) badges.push('<span class="tag danger">VAC</span>');
+  if ((p.game_bans ?? 0) >= 1) badges.push('<span class="tag danger">Gameban</span>');
+  if (p.rust_hours_total && p.rust_hours_total < 100) badges.push('<span class="tag warn">Мало часов</span>');
+  if (p.online && p.is_alive === false) badges.push('<span class="tag muted">Мёртв</span>');
+  if (p.raid_blocked) badges.push('<span class="tag warn">Рейдблок</span>');
+  if (p.ignore_reports_until && new Date(p.ignore_reports_until) > new Date()) {
+    badges.push('<span class="tag muted">Игнор жалоб</span>');
+  }
+  if (p.language) badges.push(`<span class="tag muted">${esc(p.language.toUpperCase())}</span>`);
   if (linked.length) badges.push(`<span class="tag dup" onclick="event.stopPropagation()">${linked.length + 1} аккаунт${linked.length > 1 ? "а" : ""}</span>`);
+
+  // Last finished verification: a "clean" verdict earns the "checked" badge.
+  let lastCheck = null;
+  try {
+    const { data: ck } = await sb
+      .from("checks")
+      .select("status,created_at")
+      .eq("steamid", steamid)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    lastCheck = ck;
+  } catch {}
+  if (lastCheck && lastCheck.status === "clean") badges.push('<span class="tag ok">Проверен</span>');
 
   const country = p.country_code
     ? `${countryFlag(p.country_code)} ${esc(p.country || p.country_code.toUpperCase())}`
     : "—";
   const provider = esc(p.isp) || "—";
   const firstSeen = p.first_seen ? fmtDate(p.first_seen) : "—";
+  const accountType =
+    p.is_pirate === true ? "Пират" : p.is_pirate === false ? "Лицензия" : "Неизвестно";
+  const steamBlock = p.steam_checked_at
+    ? `
+    <h4>Steam</h4>
+    <div class="pgrid">
+      <div class="prow"><span class="pkey">Тип аккаунта</span><span>${accountType}</span></div>
+      <div class="prow"><span class="pkey">Аккаунт создан</span><span>${p.steam_created ? fmtDate(p.steam_created) : '<span class="muted">скрыт</span>'}</span></div>
+      <div class="prow"><span class="pkey">Часы в Rust</span><span>${p.rust_hours_total != null ? p.rust_hours_total + " ч" : "—"}</span></div>
+      <div class="prow"><span class="pkey">Часы в Spacewar</span><span>${p.spacewar_hours_total != null ? p.spacewar_hours_total + " ч" : "—"}</span></div>
+      <div class="prow"><span class="pkey">За 2 недели</span><span>${p.steam_hours_2week != null ? p.steam_hours_2week + " ч" : "—"}</span></div>
+      <div class="prow"><span class="pkey">VAC-баны</span><span>${(p.vac_bans ?? 0) > 0 ? `<span class="tag danger">${p.vac_bans}</span>` : "0"}</span></div>
+      <div class="prow"><span class="pkey">Game-баны</span><span>${(p.game_bans ?? 0) > 0 ? `<span class="tag danger">${p.game_bans}</span>` : "0"}</span></div>
+      <div class="prow"><span class="pkey">Профиль</span><span>${p.steam_profile_public ? "открыт" : '<span class="muted">скрыт</span>'}</span></div>
+    </div>`
+    : "";
 
   card.innerHTML = `
     <div class="phead">
@@ -483,6 +552,8 @@ async function openPlayerCard(steamid) {
       <div class="prow"><span class="pkey">Двигался</span><span>${p.pos_x != null ? fmtTime(p.last_seen) : "—"}</span></div>
       <div class="prow"><span class="pkey">Квадрат</span><span class="mono small">${mapSquare(p.pos_x, p.pos_z)}</span></div>
     </div>
+
+    ${steamBlock}
 
     ${linked.length ? `
       <h4>Связанные аккаунты (${linked.length})</h4>
@@ -1086,6 +1157,111 @@ async function loadKillAnalysis() {
     .join("");
 
   window._suspects = flagged;
+}
+
+/* ---------- Anticheat (kill analysis table) ---------- */
+
+async function loadAnticheat() {
+  const { data, error } = await sb
+    .from("kills")
+    .select("attacker_steamid,attacker_name,victim_name,weapon,distance,headshot,created_at")
+    .order("created_at", { ascending: false })
+    .limit(1000);
+
+  const body = document.getElementById("anticheatBody");
+  if (error || !data) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">Ошибка загрузки</td></tr>';
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">Убийств пока не записано</td></tr>';
+    return;
+  }
+
+  const byAttacker = {};
+  data.forEach((k) => {
+    const id = k.attacker_steamid || k.attacker_name;
+    if (!id) return;
+    (byAttacker[id] = byAttacker[id] || {
+      steamid: k.attacker_steamid,
+      name: k.attacker_name,
+      kills: [],
+    }).kills.push(k);
+  });
+
+  const rows = Object.values(byAttacker)
+    .map((p) => {
+      const kills = p.kills;
+      const hs = kills.filter((k) => k.headshot).length;
+      const dists = kills.map((k) => k.distance || 0);
+      const avgDist = Math.round(dists.reduce((a, b) => a + b, 0) / dists.length);
+      const maxDist = Math.round(Math.max.apply(null, dists));
+
+      const times = kills
+        .map((k) => new Date(k.created_at).getTime())
+        .sort((a, b) => a - b);
+      let bestStreak = 1;
+      let streak = 1;
+      for (let i = 1; i < times.length; i++) {
+        if (times[i] - times[i - 1] <= STREAK_WINDOW_MS) {
+          streak++;
+          bestStreak = Math.max(bestStreak, streak);
+        } else {
+          streak = 1;
+        }
+      }
+
+      const farKills = kills.filter((k) => (k.distance || 0) > weaponLimit(k.weapon));
+
+      const flags = [];
+      if (bestStreak >= STREAK_KILLS) {
+        flags.push({ cls: "danger", text: `Серия ${bestStreak} за ${STREAK_WINDOW_MS / 1000}с` });
+      }
+      if (hs >= HEADSHOT_MIN_KILLS && hs === kills.length) {
+        flags.push({ cls: "warn", text: `Хедшот ${hs}/${kills.length}` });
+      }
+      if (farKills.length >= 2) {
+        flags.push({ cls: "vpn", text: `Дистанция ×${farKills.length}` });
+      }
+
+      return {
+        ...p,
+        total: kills.length,
+        hs,
+        hsPct: Math.round((hs / kills.length) * 100),
+        avgDist,
+        maxDist,
+        bestStreak,
+        flags,
+      };
+    })
+    .sort((a, b) => b.flags.length - a.flags.length || b.total - a.total);
+
+  window._anticheat = rows;
+
+  body.innerHTML = rows
+    .map((p, i) => {
+      const sid = esc(p.steamid || "");
+      const nm = esc(p.name || "");
+      return `
+      <tr style="cursor:pointer" onclick="${sid ? `openPlayerCard('${sid}')` : ""}">
+        <td>
+          <span class="avatar small" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
+          <b>${nm || "—"}</b>
+          <div class="mono muted">${sid}</div>
+        </td>
+        <td>${p.total}</td>
+        <td>${p.hs} <span class="muted">(${p.hsPct}%)</span></td>
+        <td>${p.avgDist}м <span class="muted">макс ${p.maxDist}м</span></td>
+        <td>${p.bestStreak}</td>
+        <td>${p.flags.map((f) => `<span class="tag ${f.cls}">${esc(f.text)}</span>`).join(" ") || '<span class="muted">—</span>'}</td>
+        <td class="row-actions">
+          <button class="btn small warn" onclick="event.stopPropagation();startCheck('${sid}', '${nm}')">Проверка</button>
+          <button class="btn small danger" onclick="event.stopPropagation();openBanModal('${sid}', '${nm}')">Бан</button>
+        </td>
+      </tr>`;
+    })
+    .join("");
 }
 
 // Builds a plain-text report of the suspicious player, ready to paste anywhere.

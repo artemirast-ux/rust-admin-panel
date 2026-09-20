@@ -3,7 +3,8 @@
   "[Panel] Supabase service role key (secret, plugin only)": "",
   "[Panel] ProxyCheck.io API key (optional; empty = free anonymous tier)": "",
   "[Panel] Re-check the same IP after (hours)": 12.0,
-  "[Panel] Kick players that use a VPN/proxy": false,
+  "[Steam] Web API key (https://steamcommunity.com/dev/apikey). Empty = no pirate/VAC/hours detection": "",
+  "[Steam] Re-check the same player after (hours)": 24.0,
   "[Panel] Command poll interval (seconds)": 5.0,
   "[UI] Chat commands": [
     "report",

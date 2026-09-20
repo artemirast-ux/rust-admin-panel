@@ -37,6 +37,12 @@ namespace Oxide.Plugins
             [JsonProperty("[Panel] Re-check the same IP after (hours)")]
             public float VpnRecheckHours = 12f;
 
+            [JsonProperty("[Steam] Web API key (https://steamcommunity.com/dev/apikey). Empty = no pirate/VAC/hours detection")]
+            public string SteamApiKey = "";
+
+            [JsonProperty("[Steam] Re-check the same player after (hours)")]
+            public float SteamRecheckHours = 24f;
+
             [JsonProperty("[Panel] Kick players that use a VPN/proxy")]
             public bool KickVpn = false;
 
@@ -1003,6 +1009,7 @@ namespace Oxide.Plugins
                 {
                     Post("/rest/v1/rpc/increment_connections", new JObject { ["p_steamid"] = iPlayer.Id }.ToString());
                     CheckVpn(player, iPlayer);
+                    CheckSteam(player, iPlayer);
                     if (config.SupportMutes)
                     {
                         RefreshMuteCache(iPlayer.Id);
@@ -1318,6 +1325,145 @@ namespace Oxide.Plugins
 
         #endregion
 
+        #region Steam data (pirate / VAC / hours)
+
+        // steamid -> last lookup time (unix seconds). Steam lookups are
+        // rate-limited, so the same player is only re-checked after SteamRecheckHours.
+        private readonly Dictionary<string, long> steamCheckedAt = new Dictionary<string, long>();
+
+        private const long RustAppId = 252490L;   // official Rust
+        private const long SpacewarAppId = 480L;  // pirated Rust clients hide behind this app
+
+        private void CheckSteam(BasePlayer player, PInfo iPlayer)
+        {
+            if (player == null || iPlayer == null || string.IsNullOrEmpty(iPlayer.Id) || string.IsNullOrEmpty(config.SteamApiKey))
+            {
+                return;
+            }
+
+            long now = ToUnixTime(DateTime.UtcNow);
+            if (steamCheckedAt.TryGetValue(iPlayer.Id, out long at) && now - at < (long)(Math.Max(1f, config.SteamRecheckHours) * 3600f))
+            {
+                return;
+            }
+            steamCheckedAt[iPlayer.Id] = now;
+
+            LookupSteam(iPlayer.Id);
+        }
+
+        // Pulls everything the RustApp-style profile needs from the Steam Web API:
+        // account creation date, playtime (2 weeks / Rust / Spacewar), VAC and game
+        // bans. Pirated copies of Rust report themselves as the free "Spacewar" app,
+        // so any playtime there marks the player as a pirate.
+        private void LookupSteam(string steamid)
+        {
+            string key = Uri.EscapeDataString(config.SteamApiKey);
+            string id = Uri.EscapeDataString(steamid);
+            string summariesUrl = $"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={key}&steamids={id}";
+            string bansUrl = $"https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key={key}&steamids={id}";
+            string ownedUrl = $"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key={key}&steamid={id}&format=json";
+
+            var patch = new JObject { ["steam_checked_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) };
+            const float timeout = 15f;
+
+            // 1) summaries: account created, playtime over the last 2 weeks, visibility
+            webrequest.Enqueue(summariesUrl, null, (sCode, sResponse) =>
+            {
+                try
+                {
+                    if (Ok(sCode) && !string.IsNullOrEmpty(sResponse))
+                    {
+                        var sArr = JObject.Parse(sResponse)["response"]?["players"] as JArray;
+                        if (sArr != null && sArr.Count > 0)
+                        {
+                            var p = sArr[0] as JObject;
+                            var created = GetLong(p, "timecreated");
+                            if (created.HasValue)
+                            {
+                                patch["steam_created"] = EpochToUtc(created.Value).ToString("o", CultureInfo.InvariantCulture);
+                            }
+                            var h2w = GetLong(p, "playtime_2weeks");
+                            if (h2w.HasValue)
+                            {
+                                // Steam reports minutes; the panel shows hours.
+                                patch["steam_hours_2week"] = (int)(h2w.Value / 60);
+                            }
+                            patch["steam_profile_public"] = (int?)sArr[0]["communityvisibilitystate"] == 3;
+                        }
+                        else
+                        {
+                            // No such Steam account: a pirated client with a fabricated SteamID.
+                            patch["is_pirate"] = true;
+                            patch["steam_profile_public"] = false;
+                        }
+                    }
+                }
+                catch (Exception ex) { PrintError($"Steam summaries parse error for {steamid}: {ex.Message}"); }
+
+                // 2) bans: VAC / game ban counters
+                webrequest.Enqueue(bansUrl, null, (bCode, bResponse) =>
+                {
+                    try
+                    {
+                        if (Ok(bCode) && !string.IsNullOrEmpty(bResponse))
+                        {
+                            var bArr = JObject.Parse(bResponse)["players"] as JArray;
+                            if (bArr != null && bArr.Count > 0)
+                            {
+                                var b = bArr[0] as JObject;
+                                patch["vac_bans"] = (int?)b["NumberOfVACBans"] ?? 0;
+                                patch["game_bans"] = (int?)b["NumberOfGameBans"] ?? 0;
+                            }
+                        }
+                    }
+                    catch (Exception ex) { PrintError($"Steam bans parse error for {steamid}: {ex.Message}"); }
+
+                    // 3) owned games: Rust vs Spacewar playtime (pirate detection)
+                    webrequest.Enqueue(ownedUrl, null, (oCode, oResponse) =>
+                    {
+                        try
+                        {
+                            if (Ok(oCode) && !string.IsNullOrEmpty(oResponse))
+                            {
+                                var games = JObject.Parse(oResponse)["response"]?["games"] as JArray;
+                                if (games != null && games.Count > 0)
+                                {
+                                    long rustMin = 0, spacewarMin = 0;
+                                    foreach (var g in games)
+                                    {
+                                        long appid = GetLong(g as JObject, "appid") ?? 0;
+                                        long mins = GetLong(g as JObject, "playtime_forever") ?? 0;
+                                        if (appid == RustAppId) rustMin = mins;
+                                        else if (appid == SpacewarAppId) spacewarMin = mins;
+                                    }
+                                    patch["rust_hours_total"] = (int)(rustMin / 60);
+                                    patch["spacewar_hours_total"] = (int)(spacewarMin / 60);
+                                    // Only derive the license flag when we actually saw
+                                    // the app list (a private profile can hide it).
+                                    if (spacewarMin > 0) patch["is_pirate"] = true;
+                                    else if (rustMin > 0) patch["is_pirate"] = false;
+                                }
+                            }
+                        }
+                        catch (Exception ex) { PrintError($"Steam owned games parse error for {steamid}: {ex.Message}"); }
+
+                        if (patch.Count > 1)
+                        {
+                            Patch($"/rest/v1/players?steamid=eq.{steamid}", patch.ToString());
+                        }
+                    }, this, RequestMethod.GET, null, timeout);
+                }, this, RequestMethod.GET, null, timeout);
+            }, this, RequestMethod.GET, null, timeout);
+        }
+
+        private static DateTime EpochToUtc(long epoch)
+        {
+            try { return DateTimeOffset.FromUnixTimeSeconds(epoch).UtcDateTime; }
+            catch { return DateTime.UtcNow; }
+        }
+
+        #endregion
+
         #region Server heartbeat
 
         private int currentFps = 0;
@@ -1579,6 +1725,28 @@ namespace Oxide.Plugins
                         mutedPlayers.Remove(steamid);
                         done = true;
                         result = $"Unmuted {steamid}";
+                        break;
+                    }
+
+                case "ignorereports":
+                    {
+                        if (string.IsNullOrEmpty(steamid))
+                        {
+                            done = false;
+                            result = "Ignore reports requires a steamid";
+                            break;
+                        }
+
+                        DateTime until = duration.HasValue
+                            ? DateTime.UtcNow.AddMinutes(duration.Value)
+                            : new DateTime(2035, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                        Patch($"/rest/v1/players?steamid=eq.{steamid}", new JObject
+                        {
+                            ["ignore_reports_until"] = until.ToString("o", CultureInfo.InvariantCulture)
+                        }.ToString());
+                        InsertAlert("report", $"Reports ignored for {name} ({steamid})");
+                        done = true;
+                        result = $"Ignoring reports for {name} ({steamid}) until {until:u}";
                         break;
                     }
 
@@ -2224,6 +2392,19 @@ namespace Oxide.Plugins
                         body["pos_z"] = Mathf.RoundToInt(pos.z);
                     }
                     catch { }
+
+                    // Live status badges (alive / raid blocked / game language).
+                    body["is_alive"] = SafeIsAlive(player);
+                    bool raid = IsRaidBlocked(player);
+                    if (raid)
+                    {
+                        body["raid_blocked"] = true;
+                    }
+                    string lang = GetLanguage(player);
+                    if (!string.IsNullOrEmpty(lang))
+                    {
+                        body["language"] = lang;
+                    }
 
                     if (body.Count > 0)
                     {
@@ -2884,6 +3065,71 @@ namespace Oxide.Plugins
         #endregion
 
         #region Util
+
+        // Raid block only exists when the "NoEscape" or "RaidBlock" plugin is
+        // installed. Looked up once and cached so we never scan the plugin list
+        // on every heartbeat.
+        private bool raidPluginsChecked = false;
+        private Plugin noEscapePlugin = null;
+        private Plugin raidBlockPlugin = null;
+
+        private static bool SafeIsAlive(BasePlayer player)
+        {
+            try { return player.IsAlive(); }
+            catch { return true; }
+        }
+
+        private bool IsRaidBlocked(BasePlayer player)
+        {
+            try
+            {
+                if (!raidPluginsChecked)
+                {
+                    noEscapePlugin = plugins.Find("NoEscape");
+                    raidBlockPlugin = plugins.Find("RaidBlock");
+                    raidPluginsChecked = true;
+                }
+                Plugin plugin = noEscapePlugin ?? raidBlockPlugin;
+                if (plugin == null)
+                {
+                    return false;
+                }
+                object result = plugin.Call("IsRaidBlocked", player);
+                return result != null && Convert.ToBoolean(result);
+            }
+            catch { return false; }
+        }
+
+        // The in-game language is only exposed through the session object, which
+        // is not part of the public Oxide API surface, so read it reflectively and
+        // silently give up when the layout ever changes.
+        private static string GetLanguage(BasePlayer player)
+        {
+            try
+            {
+                var type = player.GetType();
+                object session = type.GetProperty("SessionInfo")?.GetValue(player, null);
+                if (session != null)
+                {
+                    object value = session.GetType().GetField("language")?.GetValue(session);
+                    if (value != null)
+                    {
+                        string code = value.ToString();
+                        if (!string.IsNullOrEmpty(code) && !"unknown".Equals(code, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return code;
+                        }
+                    }
+                }
+                object lc = type.GetProperty("LanguageCode")?.GetValue(player, null);
+                if (lc != null)
+                {
+                    return lc.ToString();
+                }
+            }
+            catch { }
+            return null;
+        }
 
         private static long ToUnixTime(DateTime dt)
         {
