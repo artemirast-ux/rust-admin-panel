@@ -801,29 +801,53 @@ namespace Oxide.Plugins
 
         private void Get(string path, Action<int, string> callback, float timeout = 10f)
         {
-            webrequest.Enqueue(Url(path), null, (code, response) =>
+            try
             {
-                if (!Ok(code) || string.IsNullOrEmpty(response))
+                webrequest.Enqueue(Url(path), null, (code, response) =>
                 {
-                    callback?.Invoke(code, null);
-                    return;
-                }
-                callback?.Invoke(code, response);
-            }, this, RequestMethod.GET, AuthHeaders(), timeout);
+                    try
+                    {
+                        if (!Ok(code) || string.IsNullOrEmpty(response))
+                        {
+                            callback?.Invoke(code, null);
+                            return;
+                        }
+                        callback?.Invoke(code, response);
+                    }
+                    catch (Exception ex) { PrintError($"Get callback failed ({path}): {ex.Message}"); }
+                }, this, RequestMethod.GET, AuthHeaders(), timeout);
+            }
+            catch (Exception ex) { PrintError($"Get failed ({path}): {ex.Message}"); }
         }
 
         private void Post(string path, string body, Action<int, string> callback = null, bool upsert = false)
         {
-            var headers = AuthHeaders();
-            headers["Prefer"] = upsert ? "return=minimal, resolution=merge-duplicates" : "return=minimal";
-            webrequest.Enqueue(Url(path), body, (code, response) => callback?.Invoke(code, response), this, RequestMethod.POST, headers, 10f);
+            try
+            {
+                var headers = AuthHeaders();
+                headers["Prefer"] = upsert ? "return=minimal, resolution=merge-duplicates" : "return=minimal";
+                webrequest.Enqueue(Url(path), body, (code, response) =>
+                {
+                    try { callback?.Invoke(code, response); }
+                    catch (Exception ex) { PrintError($"Post callback failed ({path}): {ex.Message}"); }
+                }, this, RequestMethod.POST, headers, 10f);
+            }
+            catch (Exception ex) { PrintError($"Post failed ({path}): {ex.Message}"); }
         }
 
         private void Patch(string path, string body, Action<int, string> callback = null)
         {
-            var headers = AuthHeaders();
-            headers["Prefer"] = "return=minimal";
-            webrequest.Enqueue(Url(path), body, (code, response) => callback?.Invoke(code, response), this, RequestMethod.PATCH, headers, 10f);
+            try
+            {
+                var headers = AuthHeaders();
+                headers["Prefer"] = "return=minimal";
+                webrequest.Enqueue(Url(path), body, (code, response) =>
+                {
+                    try { callback?.Invoke(code, response); }
+                    catch (Exception ex) { PrintError($"Patch callback failed ({path}): {ex.Message}"); }
+                }, this, RequestMethod.PATCH, headers, 10f);
+            }
+            catch (Exception ex) { PrintError($"Patch failed ({path}): {ex.Message}"); }
         }
 
         private static string GetStr(JObject o, string key)
@@ -991,12 +1015,19 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            var body = new JObject
+            try
             {
-                ["online"] = false,
-                ["last_seen"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
-            };
-            Patch("/rest/v1/players?online=eq.true", body.ToString());
+                var body = new JObject
+                {
+                    ["online"] = false,
+                    ["last_seen"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
+                };
+                Patch("/rest/v1/players?online=eq.true", body.ToString());
+            }
+            catch (Exception ex)
+            {
+                PrintError($"MarkAllOffline failed: {ex.Message}");
+            }
         }
 
         private static string CleanIp(string address)

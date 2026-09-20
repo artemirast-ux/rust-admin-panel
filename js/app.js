@@ -37,6 +37,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  document.querySelectorAll("[data-htab]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const name = tab.dataset.htab;
+      document.querySelectorAll("[data-htab]").forEach((t) => t.classList.toggle("active", t === tab));
+      document.querySelectorAll(".htab").forEach((h) => h.classList.toggle("active", h.id === "hist-" + name));
+      loadHistoryTab(name);
+    });
+  });
+
   document.getElementById("btnCheckSend").addEventListener("click", sendCheckMessage);
   document.getElementById("btnCheckClose").addEventListener("click", closeCheckModal);
   document.getElementById("btnCheckShow").addEventListener("click", showCheckTable);
@@ -145,11 +154,9 @@ async function refreshAll() {
   if (currentView === "bans") loadBans();
   if (currentView === "mutes") loadMutes();
   if (currentView === "chat") loadChat();
-  if (currentView === "kills") loadKills();
   if (currentView === "killanalysis") loadKillAnalysis();
-  if (currentView === "connections") loadConnections();
+  if (currentView === "history") loadHistoryTab();
   if (currentView === "ipchecks") loadIpChecks();
-  if (currentView === "actions") loadActions();
 }
 
 /* ---------- Server status ---------- */
@@ -342,10 +349,12 @@ async function loadPlayers() {
 
 function playerCtxMenu(x, y, steamid, name) {
   showCtxMenu(x, y, [
-    { label: "Вызвать на проверку", fn: () => startCheck(steamid, name) },
+    { label: "Профиль игрока", fn: () => openPlayerCard(steamid) },
+    { label: "Начать проверку", fn: () => startCheck(steamid, name) },
     { label: "Ответить в ЛС", fn: () => openPmModal(steamid, name) },
     { label: "Замутить", fn: () => openMuteModal(steamid, name) },
-    { label: "Забанить", fn: () => openBanModal(steamid, name) },
+    { label: "Заблокировать", fn: () => openBanModal(steamid, name) },
+    { label: "Копировать SteamID", fn: () => copyText(steamid, "SteamID скопирован") },
   ]);
 }
 
@@ -384,7 +393,7 @@ function showDuplicates(steamid) {
   document.getElementById("modal").classList.remove("hidden");
 }
 
-// Full player profile: everything about one player in a single window.
+// Full player profile (RustApp-style): everything about one player in one window.
 async function openPlayerCard(steamid) {
   const p = allPlayers.find((x) => x.steamid === steamid);
   if (!p) return;
@@ -395,32 +404,51 @@ async function openPlayerCard(steamid) {
     (x) => x.steamid !== steamid && ((p.ip && x.ip === p.ip) || (!!p.hwid && x.hwid === p.hwid))
   );
 
+  // Status badges, like RustApp shows under a player's name
+  const badges = [];
+  if (p.is_vpn) badges.push('<span class="tag vpn">VPN</span>');
+  if (p.vpn_checked && !p.is_vpn) badges.push('<span class="tag ok">без VPN</span>');
+  if (p.muted) badges.push('<span class="tag warn">Мут</span>');
+  if (p.is_banned) badges.push('<span class="tag danger">Заблокирован</span>');
+  if (p.being_checked) badges.push('<span class="tag warn">На проверке</span>');
+  if (linked.length) badges.push(`<span class="tag dup" onclick="event.stopPropagation()">${linked.length + 1} аккаунт${linked.length > 1 ? "а" : ""}</span>`);
+
+  const country = p.country_code
+    ? `${countryFlag(p.country_code)} ${esc(p.country || p.country_code.toUpperCase())}`
+    : "—";
+  const provider = esc(p.isp) || "—";
+  const firstSeen = p.first_seen ? fmtDate(p.first_seen) : "—";
+
   card.innerHTML = `
     <div class="phead">
       <span class="avatar" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
-      <div>
+      <div style="flex:1;min-width:0">
         <h3 style="margin:0">${esc(p.name) || "—"}</h3>
-        <span class="muted small">${p.online ? "сейчас на сервере" : "не в сети"} · последний раз: ${fmtTime(p.last_seen)}</span>
+        <span class="muted small">${p.online ? "сейчас на сервере" : "не в сети"} · последний раз ${fmtTime(p.last_seen)}</span>
+        ${badges.length ? `<div class="pbadges">${badges.join("")}</div>` : ""}
       </div>
     </div>
+
+    <h4>Об игроке</h4>
     <div class="pgrid">
-      <div class="prow"><span class="pkey">Страна</span><span>${p.country_code ? `${countryFlag(p.country_code)} ${esc(p.country || p.country_code.toUpperCase())}` : "—"}</span></div>
-      <div class="prow"><span class="pkey">Провайдер</span><span>${esc(p.isp) || "—"}</span></div>
-      <div class="prow"><span class="pkey">Пинг</span><span>${p.ping ?? 0} мс</span></div>
-      <div class="prow"><span class="pkey">IP</span><span class="mono">${esc(p.ip) || "—"}</span></div>
+      <div class="prow"><span class="pkey">Страна</span><span>${country}</span></div>
+      <div class="prow"><span class="pkey">Провайдер</span><span>${provider}</span></div>
+      <div class="prow"><span class="pkey">IP адрес</span><span class="mono small">${esc(p.ip) || "—"}</span></div>
       <div class="prow"><span class="pkey">SteamID</span><span class="mono small">${esc(p.steamid)}</span></div>
+      <div class="prow"><span class="pkey">Впервые замечен</span><span>${firstSeen}</span></div>
+      <div class="prow"><span class="pkey">Пинг</span><span>${p.ping ?? 0} мс</span></div>
       <div class="prow"><span class="pkey">HWID</span><span class="mono small">${esc(p.hwid) || "—"}</span></div>
-      <div class="prow"><span class="pkey">VPN</span><span>${p.is_vpn ? '<span class="tag vpn">VPN</span>' : p.vpn_checked ? '<span class="tag ok">нет</span>' : '<span class="tag muted">не проверен</span>'}</span></div>
+      <div class="prow"><span class="pkey">Аккаунт</span><span>${p.connections_count ? p.connections_count + " заходов" : "—"}</span></div>
     </div>
 
     ${linked.length ? `
-      <h4>Другие аккаунты с этим же IP / HWID</h4>
+      <h4>Связанные аккаунты (${linked.length})</h4>
       ${linked.map((x) => `
         <div class="linked-row">
           <span class="avatar small" style="background:${avatarColor(x.name)}">${initials(x.name)}</span>
           <div class="linked-info">
             <b>${esc(x.name)}</b>
-            <span class="muted small">${x.steamid}</span>
+            <span class="muted small">${x.steamid} · ${x.ip ? "общий IP" : ""}${x.hwid && p.hwid === x.hwid ? " · общий HWID" : ""}</span>
           </div>
           <span class="tag ${x.online ? "ok" : "muted"}">${x.online ? "онлайн" : "оффлайн"}</span>
           <button class="btn small" onclick="closeModal();startCheck('${esc(x.steamid)}','${esc(x.name)}')">Проверка</button>
@@ -429,6 +457,7 @@ async function openPlayerCard(steamid) {
 
     <div class="check-actions">
       <button class="btn" onclick="closeModal()">Закрыть</button>
+      <button class="btn" onclick="copyText('${esc(p.steamid)}','SteamID скопирован')">SteamID</button>
       ${p.ip ? `<button class="btn" onclick="closeModal();document.getElementById('ipInput').value='${esc(p.ip)}';checkIp('${esc(p.ip)}')">Проверить IP</button>` : ""}
       <button class="btn" onclick="closeModal();openPmModal('${esc(p.steamid)}','${esc(p.name)}')">Написать в ЛС</button>
       <button class="btn warn" onclick="closeModal();startCheck('${esc(p.steamid)}','${esc(p.name)}')">Проверка</button>
@@ -436,6 +465,16 @@ async function openPlayerCard(steamid) {
     </div>
   `;
   document.getElementById("modal").classList.remove("hidden");
+}
+
+// Copies text to the clipboard (fallback for older browsers).
+function copyText(text, okMsg) {
+  const done = () => { const el = document.createElement("div"); el.className = "toast"; el.textContent = okMsg; document.body.appendChild(el); setTimeout(() => el.remove(), 2000); };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(done, () => prompt("Скопируйте вручную:", text));
+  } else {
+    prompt("Скопируйте вручную:", text);
+  }
 }
 
 /* ---------- Reports ---------- */
@@ -469,6 +508,7 @@ async function loadReports() {
         <td><span class="tag ${r.status === "pending" ? "warn" : r.status === "banned" ? "danger" : "ok"}">${r.status}</span></td>
         <td style="white-space:nowrap">
           <button class="btn small warn" title="Открыть чат проверки" onclick="startCheck('${esc(r.target_steamid)}', '${esc(r.target_name)}')">Проверка</button>
+          <button class="btn small" title="Последние сообщения игрока" onclick="showPlayerMessages('${esc(r.target_steamid)}', '${esc(r.target_name)}')">Сообщения</button>
           <button class="btn small danger" onclick="openBanModal('${esc(r.target_steamid)}', '${esc(r.target_name)}')">Забанить</button>
           <button class="btn small" onclick="markReportReviewed(${r.id})">Проверен</button>
         </td>
@@ -487,9 +527,44 @@ async function loadReports() {
 
 function reportCtxMenu(x, y, steamid, name) {
   showCtxMenu(x, y, [
-    { label: "Вызвать на проверку", fn: () => startCheck(steamid, name) },
-    { label: "Забанить", fn: () => openBanModal(steamid, name) },
+    { label: "Начать проверку", fn: () => startCheck(steamid, name) },
+    { label: "Заблокировать", fn: () => openBanModal(steamid, name) },
+    { label: "Кикнуть", fn: () => quickAction("kick", steamid, name) },
+    { label: "Показать сообщения", fn: () => showPlayerMessages(steamid, name) },
+    { label: "Копировать SteamID", fn: () => copyText(steamid, "SteamID скопирован") },
   ]);
+}
+
+// Shows the recent chat messages of one player.
+async function showPlayerMessages(steamid, name) {
+  const { data } = await sb
+    .from("chat_logs")
+    .select("message,created_at")
+    .eq("steamid", steamid)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  const card = document.getElementById("modalCard");
+  card.classList.add("wide");
+  card.innerHTML = `
+    <h3>Сообщения игрока</h3>
+    <p class="muted small">${esc(name)} · ${steamid}</p>
+    ${
+      data && data.length
+        ? data
+            .map(
+              (m) => `
+          <div class="chat-line">
+            ${esc(m.message)}
+            <span class="time">${fmtTime(m.created_at)}</span>
+          </div>`
+            )
+            .join("")
+        : '<div class="empty">Этот игрок ещё ничего не писал в чат</div>'
+    }
+    <div class="row"><button class="btn" onclick="closeModal()">Закрыть</button></div>
+  `;
+  document.getElementById("modal").classList.remove("hidden");
 }
 
 function showCtxMenu(x, y, items) {
@@ -1202,6 +1277,18 @@ async function confirmMute() {
   }
 }
 
+/* ---------- History (kills / connections / actions in tabs) ---------- */
+
+function loadHistoryTab(name) {
+  if (!name) {
+    const active = document.querySelector("[data-htab].active");
+    name = active ? active.dataset.htab : "kills";
+  }
+  if (name === "kills") loadKills();
+  if (name === "connections") loadConnections();
+  if (name === "actions") loadActions();
+}
+
 /* ---------- Kills ---------- */
 
 async function loadKills() {
@@ -1541,6 +1628,12 @@ function fmtTime(iso) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 // Turns a two-letter country code into an emoji flag (Regional Indicator Symbols)

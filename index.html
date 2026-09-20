@@ -26,14 +26,12 @@
         <a href="#" class="nav-link" data-view="players">Игроки онлайн</a>
         <a href="#" class="nav-link" data-view="reports">Жалобы <span id="reportsBadge" class="badge hidden"></span></a>
         <a href="#" class="nav-link" data-view="checks">Проверки <span id="checksBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="bans">Блокировки</a>
+        <a href="#" class="nav-link" data-view="mutes">Муты</a>
         <a href="#" class="nav-link" data-view="chat">Чат</a>
         <a href="#" class="nav-link" data-view="killanalysis">Подозрения <span id="suspiciousBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="bans">Баны</a>
-        <a href="#" class="nav-link" data-view="mutes">Муты</a>
-        <a href="#" class="nav-link" data-view="kills">Убийства</a>
-        <a href="#" class="nav-link" data-view="connections">Входы/выходы</a>
+        <a href="#" class="nav-link" data-view="history">История</a>
         <a href="#" class="nav-link" data-view="ipchecks">IP и VPN</a>
-        <a href="#" class="nav-link" data-view="actions">История действий</a>
       </nav>
       <button id="btnLogout" class="btn">Выйти</button>
     </aside>
@@ -54,11 +52,11 @@
         </div>
         <div class="grid-2">
           <div class="panel">
-            <h3>Последние репорты</h3>
+            <h3>Последние жалобы</h3>
             <div id="recentReports"></div>
           </div>
           <div class="panel">
-            <h3>Последние подключения</h3>
+            <h3>Последние события</h3>
             <div id="recentConnections"></div>
           </div>
         </div>
@@ -134,15 +132,38 @@
         </div>
       </section>
 
-      <section id="view-kills" class="view">
+      <section id="view-history" class="view">
         <div class="panel">
-          <h3>Лог убийств</h3>
-          <table class="table">
-            <thead>
-              <tr><th>Киллер</th><th>Жертва</th><th>Оружие</th><th>Дистанция</th><th>Время</th></tr>
-            </thead>
-            <tbody id="killsBody"></tbody>
-          </table>
+          <h3>История событий</h3>
+          <div class="tabs">
+            <button class="tab active" data-htab="kills">Убийства</button>
+            <button class="tab" data-htab="connections">Входы и выходы</button>
+            <button class="tab" data-htab="actions">Действия админов</button>
+          </div>
+          <div id="hist-kills" class="htab active">
+            <table class="table">
+              <thead>
+                <tr><th>Киллер</th><th>Жертва</th><th>Оружие</th><th>Дистанция</th><th>Время</th></tr>
+              </thead>
+              <tbody id="killsBody"></tbody>
+            </table>
+          </div>
+          <div id="hist-connections" class="htab">
+            <table class="table">
+              <thead>
+                <tr><th>Ник</th><th>SteamID</th><th>IP</th><th>Событие</th><th>Время</th></tr>
+              </thead>
+              <tbody id="connectionsBody"></tbody>
+            </table>
+          </div>
+          <div id="hist-actions" class="htab">
+            <table class="table">
+              <thead>
+                <tr><th>Команда</th><th>Цель</th><th>Причина</th><th>Админ</th><th>Статус</th><th>Результат</th><th>Время</th></tr>
+              </thead>
+              <tbody id="actionsBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -154,29 +175,6 @@
         </div>
       </section>
 
-      <section id="view-connections" class="view">
-        <div class="panel">
-          <h3>Лог подключений</h3>
-          <table class="table">
-            <thead>
-              <tr><th>Ник</th><th>SteamID</th><th>IP</th><th>Событие</th><th>Время</th></tr>
-            </thead>
-            <tbody id="connectionsBody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section id="view-actions" class="view">
-        <div class="panel">
-          <h3>История действий администраторов</h3>
-          <table class="table">
-            <thead>
-              <tr><th>Команда</th><th>Цель</th><th>Причина</th><th>Админ</th><th>Статус</th><th>Результат</th><th>Время</th></tr>
-            </thead>
-            <tbody id="actionsBody"></tbody>
-          </table>
-        </div>
-      </section>
       <section id="view-ipchecks" class="view">
         <div class="panel">
           <h3>Проверка IP на VPN / прокси</h3>
