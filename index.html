@@ -22,18 +22,18 @@
     <aside class="sidebar">
       <div class="brand">RustAdminPanel</div>
       <nav>
-        <a href="#" class="nav-link active" data-view="dashboard">Дашборд</a>
+        <a href="#" class="nav-link active" data-view="dashboard">Обзор</a>
         <a href="#" class="nav-link" data-view="players">Игроки онлайн</a>
-        <a href="#" class="nav-link" data-view="reports">Репорты <span id="reportsBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="reports">Жалобы <span id="reportsBadge" class="badge hidden"></span></a>
         <a href="#" class="nav-link" data-view="checks">Проверки <span id="checksBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="chat">Чат</a>
+        <a href="#" class="nav-link" data-view="killanalysis">Подозрения <span id="suspiciousBadge" class="badge hidden"></span></a>
         <a href="#" class="nav-link" data-view="bans">Баны</a>
         <a href="#" class="nav-link" data-view="mutes">Муты</a>
-        <a href="#" class="nav-link" data-view="chat">Чат-лог</a>
         <a href="#" class="nav-link" data-view="kills">Убийства</a>
-        <a href="#" class="nav-link" data-view="killanalysis">Анализ киллов <span id="suspiciousBadge" class="badge hidden"></span></a>
-        <a href="#" class="nav-link" data-view="connections">Подключения</a>
-        <a href="#" class="nav-link" data-view="ipchecks">IP-проверки</a>
-        <a href="#" class="nav-link" data-view="actions">Действия</a>
+        <a href="#" class="nav-link" data-view="connections">Входы/выходы</a>
+        <a href="#" class="nav-link" data-view="ipchecks">IP и VPN</a>
+        <a href="#" class="nav-link" data-view="actions">История действий</a>
       </nav>
       <button id="btnLogout" class="btn">Выйти</button>
     </aside>
@@ -67,18 +67,15 @@
       <section id="view-players" class="view">
         <div class="panel">
           <h3>Игроки на сервере</h3>
-          <table class="table">
-            <thead>
-              <tr><th>Ник</th><th>SteamID</th><th>IP</th><th>HWID</th><th>Страна</th><th>VPN</th><th>Ping</th><th>Действия</th></tr>
-            </thead>
-            <tbody id="playersBody"></tbody>
-          </table>
+          <input id="playersSearch" class="search-input" placeholder="Поиск по нику…" autocomplete="off" />
+          <div id="playersGrid" class="players-grid"></div>
         </div>
       </section>
 
       <section id="view-reports" class="view">
         <div class="panel">
-          <h3>Репорты игроков <span class="muted small">(ПКМ по игроку — вызвать на проверку)</span></h3>
+          <h3>Жалобы на игроков</h3>
+          <p class="muted small" style="margin-bottom:12px">Нажмите «Проверка», чтобы вызвать игрока на проверку и следить за ним в реальном времени. Правый клик по строке — быстрое меню.</p>
           <table class="table">
             <thead>
               <tr><th>Жалоба на</th><th>Причина</th><th>От кого</th><th>Источник</th><th>Время</th><th>Статус</th><th>Действия</th></tr>
@@ -91,7 +88,7 @@
       <section id="view-checks" class="view">
         <div class="panel">
           <h3>Проверки игроков</h3>
-          <p class="muted small" style="margin-bottom:12px">Сессия открывается из раздела «Репорты» (правый клик по игроку → «Вызвать на проверку»). В чате видно, что игрок пишет и кого убивает, можно ответить ему, показать табличку в игре и вынести вердикт.</p>
+          <p class="muted small" style="margin-bottom:12px">Проверка — это слежение за игроком в реальном времени: вы видите, что он пишет в чат и кого убивает, можете написать ему лично, показать ему табличку в игре и вынести вердикт. Начать проверку можно из жалобы (кнопка «Проверка») или из списка игроков онлайн.</p>
           <table class="table">
             <thead>
               <tr><th>Игрок</th><th>SteamID</th><th>Админ</th><th>Статус</th><th>Табличка</th><th>Начата</th><th>Закрыта</th><th>Действия</th></tr>
@@ -127,11 +124,12 @@
 
       <section id="view-chat" class="view">
         <div class="panel">
-          <h3>Чат сервера <span class="muted small">(ПКМ по игроку — ответить в ЛС / замутить)</span></h3>
+          <h3>Чат сервера</h3>
           <div class="chat-broadcast">
             <input id="broadcastInput" placeholder="Написать всем игрокам на сервере…" autocomplete="off" />
             <button class="btn primary" id="btnBroadcast">Всем</button>
           </div>
+          <p class="muted small" style="margin-bottom:8px">Правый клик по сообщению игрока — ответить ему в личку или замутить.</p>
           <div id="chatLog" class="chat-log"></div>
         </div>
       </section>
@@ -151,7 +149,7 @@
       <section id="view-killanalysis" class="view">
         <div class="panel">
           <h3>Анализ убийств — подозрительная активность</h3>
-          <p class="muted small" style="margin-bottom:12px">Автоматический поиск читеров по последним убийствам: серии убийств за короткое время, выстрелы только в голову, убийства с неестественно больших дистанций. Нажми на игрока, чтобы посмотреть детали и скопировать статистику.</p>
+          <p class="muted small" style="margin-bottom:12px">Панель сама ищет читеров по последним убийствам: серии убийств за короткое время, выстрелы только в голову, убийства с неестественно больших дистанций. Нажмите на игрока, чтобы посмотреть детали и скопировать его статистику.</p>
           <div id="suspiciousList"></div>
         </div>
       </section>

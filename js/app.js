@@ -29,6 +29,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ip) checkIp(ip);
   });
 
+  const ps = document.getElementById("playersSearch");
+  if (ps) {
+    ps.addEventListener("input", (e) => {
+      playersQuery = e.target.value;
+      loadPlayers();
+    });
+  }
+
   document.getElementById("btnCheckSend").addEventListener("click", sendCheckMessage);
   document.getElementById("btnCheckClose").addEventListener("click", closeCheckModal);
   document.getElementById("btnCheckShow").addEventListener("click", showCheckTable);
@@ -150,12 +158,17 @@ async function loadServerStatus() {
   const { data } = await sb.from("server_status").select("*").eq("id", 1).maybeSingle();
   const el = document.getElementById("serverInfo");
   if (!data) {
-    el.innerHTML = "Сервер не в сети или плагин не настроен";
+    el.innerHTML = '<span class="tag muted">сервер не в сети</span>';
     return;
   }
   const ago = Math.round((Date.now() - new Date(data.last_heartbeat).getTime()) / 1000);
   const online = ago < 90;
-  el.innerHTML = `<b>${esc(data.hostname) || "Rust Server"}</b> — игроки: <b>${data.players_online}/${data.max_players}</b> — FPS: <b>${data.fps}</b> — <span class="tag ${online ? "ok" : "danger"}">${online ? "онлайн" : "оффлайн (" + ago + "с)"}</span>`;
+  el.innerHTML = `
+    <span class="dot ${online ? "on" : "off"}"></span>
+    <b>${esc(data.hostname) || "Rust Server"}</b>
+    <span class="sep">·</span> игроков: <b>${data.players_online}/${data.max_players}</b>
+    <span class="sep">·</span> FPS: <b>${data.fps}</b>
+    ${online ? "" : `<span class="tag warn" style="margin-left:8px">нет связи ${ago}с</span>`}`;
 }
 
 /* ---------- Dashboard ---------- */
@@ -239,6 +252,7 @@ async function loadDashboard() {  // NOTE: with head:true the count comes back N
 /* ---------- Players ---------- */
 
 let allPlayers = []; // every known player (incl. offline), used for multi-account lookup
+let playersQuery = "";
 
 async function loadPlayers() {
   const [{ data, error }, { data: all }] = await Promise.all([
@@ -247,10 +261,30 @@ async function loadPlayers() {
   ]);
   allPlayers = all || [];
 
+  const el = document.getElementById("playersGrid");
+  if (!el) return;
+
+  if (error || !data) {
+    el.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(error?.message || "")}</div>`;
+    return;
+  }
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">Сейчас на сервере никого нет</div>';
+    return;
+  }
+
+  const q = playersQuery.trim().toLowerCase();
+  const list = q ? data.filter((p) => String(p.name || "").toLowerCase().includes(q)) : data;
+
+  if (!list.length) {
+    el.innerHTML = `<div class="empty">Никого не найдено по запросу «${esc(playersQuery)}»</div>`;
+    return;
+  }
+
   // Group players by IP / HWID to find shared accounts
-  const byKey = (list, key) => {
+  const byKey = (list2, key) => {
     const m = {};
-    list.forEach((p) => {
+    list2.forEach((p) => {
       const v = p[key];
       if (v) (m[v] = m[v] || []).push(p.steamid);
     });
@@ -258,49 +292,50 @@ async function loadPlayers() {
   };
   const byIp = byKey(allPlayers, "ip");
   const byHwid = byKey(allPlayers, "hwid");
+
   const dupCount = (p) => {
     const ipN = p.ip ? (byIp[p.ip] || []).filter((s) => s !== p.steamid).length : 0;
     const hwN = p.hwid ? (byHwid[p.hwid] || []).filter((s) => s !== p.steamid).length : 0;
     return ipN + hwN;
   };
 
-  const body = document.getElementById("playersBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
-    return;
-  }
-  if (!data.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">Нет игроков онлайн</td></tr>';
-    return;
-  }
-
-  body.innerHTML = data
+  el.innerHTML = list
     .map((p) => {
       const dups = dupCount(p);
+      const ping = p.ping ?? 0;
+      const pingCls = ping === 0 ? "muted" : ping < 80 ? "ok" : ping < 160 ? "warn" : "danger";
+      const country = p.country_code ? `${countryFlag(p.country_code)} ${esc(p.country_code.toUpperCase())}` : "🌍 —";
+
       return `
-      <tr data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}">
-        <td><b>${esc(p.name)}</b></td>
-        <td class="mono">${esc(p.steamid)}</td>
-        <td class="mono">${esc(p.ip)}</td>
-        <td class="mono">${shortHwid(p.hwid)}</td>
-        <td>${countryFlag(p.country_code)} ${esc(p.country) || "—"}${dups ? ` <button class="btn small warn" title="Найдены аккаунты с таким же IP/HWID" onclick="showDuplicates('${p.steamid}')">${dups + 1} акк.</button>` : ""}</td>
-        <td>${p.is_vpn ? '<span class="tag vpn">VPN</span>' : p.vpn_checked ? '<span class="tag ok">чисто</span>' : '<span class="tag muted">проверка…</span>'}</td>
-        <td>${p.ping ?? 0} мс</td>
-        <td style="white-space:nowrap">
-          <button class="btn small danger" onclick="openBanModal('${p.steamid}', '${esc(p.name)}', '${esc(p.ip)}', '${esc(p.hwid)}')">Бан</button>
-          <button class="btn small" onclick="quickAction('kick','${p.steamid}','${esc(p.name)}')">Кик</button>
-          <button class="btn small" onclick="quickAction('mute','${p.steamid}','${esc(p.name)}')">Мут</button>
-          ${p.ip ? `<button class="btn small" title="Проверить IP на VPN" onclick="document.getElementById('ipInput').value='${esc(p.ip)}';checkIp('${esc(p.ip)}')">IP</button>` : ""}
-        </td>
-      </tr>`;
+      <div class="pcard" data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}">
+        <div class="pcard-top">
+          <span class="avatar" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
+          <div class="pcard-name">
+            <b>${esc(p.name) || "—"}</b>
+            <span class="muted small">${country}</span>
+          </div>
+          <span class="ping-tag ${pingCls}">${ping} мс</span>
+        </div>
+        <div class="pcard-flags">
+          ${p.is_vpn ? '<span class="tag vpn">VPN</span>' : p.vpn_checked ? '<span class="tag ok">без VPN</span>' : ""}
+          ${dups ? `<button class="tag dup" title="Другие аккаунты с таким же IP или компьютером" onclick="event.stopPropagation();showDuplicates('${p.steamid}')">${dups + 1} аккаунта</button>` : ""}
+        </div>
+        <div class="pcard-actions">
+          <button class="btn small" onclick="event.stopPropagation();openPlayerCard('${p.steamid}')">Подробнее</button>
+          <button class="btn small warn" onclick="event.stopPropagation();startCheck('${esc(p.steamid)}','${esc(p.name)}')">Проверка</button>
+          <button class="btn small" onclick="event.stopPropagation();openMuteModal('${esc(p.steamid)}','${esc(p.name)}')">Мут</button>
+          <button class="btn small danger" onclick="event.stopPropagation();openBanModal('${esc(p.steamid)}','${esc(p.name)}')">Бан</button>
+        </div>
+      </div>`;
     })
     .join("");
 
-  // Right-click any player row -> quick actions (verify / pm / mute / ban)
-  body.querySelectorAll("tr[data-sid]").forEach((row) => {
-    row.addEventListener("contextmenu", (e) => {
+  // Click anywhere on a card -> full player details
+  el.querySelectorAll(".pcard").forEach((card) => {
+    card.addEventListener("click", () => openPlayerCard(card.dataset.sid));
+    card.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      playerCtxMenu(e.clientX, e.clientY, row.dataset.sid, row.dataset.name);
+      playerCtxMenu(e.clientX, e.clientY, card.dataset.sid, card.dataset.name);
     });
   });
 }
@@ -326,6 +361,7 @@ function showDuplicates(steamid) {
   );
 
   const card = document.getElementById("modalCard");
+  card.classList.add("wide");
   card.innerHTML = `
     <h3>Аккаунты с тем же IP / HWID</h3>
     <p class="muted">${esc(p.name)} — IP <span class="mono">${esc(p.ip) || "—"}</span>, HWID <span class="mono">${shortHwid(p.hwid)}</span></p>
@@ -344,6 +380,60 @@ function showDuplicates(steamid) {
         : '<div class="empty">Совпадений не найдено</div>'
     }
     <div class="row"><button class="btn" onclick="closeModal()">Закрыть</button></div>
+  `;
+  document.getElementById("modal").classList.remove("hidden");
+}
+
+// Full player profile: everything about one player in a single window.
+async function openPlayerCard(steamid) {
+  const p = allPlayers.find((x) => x.steamid === steamid);
+  if (!p) return;
+
+  const card = document.getElementById("modalCard");
+  card.classList.add("wide");
+  const linked = allPlayers.filter(
+    (x) => x.steamid !== steamid && ((p.ip && x.ip === p.ip) || (!!p.hwid && x.hwid === p.hwid))
+  );
+
+  card.innerHTML = `
+    <div class="phead">
+      <span class="avatar" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
+      <div>
+        <h3 style="margin:0">${esc(p.name) || "—"}</h3>
+        <span class="muted small">${p.online ? "сейчас на сервере" : "не в сети"} · последний раз: ${fmtTime(p.last_seen)}</span>
+      </div>
+    </div>
+    <div class="pgrid">
+      <div class="prow"><span class="pkey">Страна</span><span>${p.country_code ? `${countryFlag(p.country_code)} ${esc(p.country || p.country_code.toUpperCase())}` : "—"}</span></div>
+      <div class="prow"><span class="pkey">Провайдер</span><span>${esc(p.isp) || "—"}</span></div>
+      <div class="prow"><span class="pkey">Пинг</span><span>${p.ping ?? 0} мс</span></div>
+      <div class="prow"><span class="pkey">IP</span><span class="mono">${esc(p.ip) || "—"}</span></div>
+      <div class="prow"><span class="pkey">SteamID</span><span class="mono small">${esc(p.steamid)}</span></div>
+      <div class="prow"><span class="pkey">HWID</span><span class="mono small">${esc(p.hwid) || "—"}</span></div>
+      <div class="prow"><span class="pkey">VPN</span><span>${p.is_vpn ? '<span class="tag vpn">VPN</span>' : p.vpn_checked ? '<span class="tag ok">нет</span>' : '<span class="tag muted">не проверен</span>'}</span></div>
+    </div>
+
+    ${linked.length ? `
+      <h4>Другие аккаунты с этим же IP / HWID</h4>
+      ${linked.map((x) => `
+        <div class="linked-row">
+          <span class="avatar small" style="background:${avatarColor(x.name)}">${initials(x.name)}</span>
+          <div class="linked-info">
+            <b>${esc(x.name)}</b>
+            <span class="muted small">${x.steamid}</span>
+          </div>
+          <span class="tag ${x.online ? "ok" : "muted"}">${x.online ? "онлайн" : "оффлайн"}</span>
+          <button class="btn small" onclick="closeModal();startCheck('${esc(x.steamid)}','${esc(x.name)}')">Проверка</button>
+        </div>`).join("")}
+    ` : ""}
+
+    <div class="check-actions">
+      <button class="btn" onclick="closeModal()">Закрыть</button>
+      ${p.ip ? `<button class="btn" onclick="closeModal();document.getElementById('ipInput').value='${esc(p.ip)}';checkIp('${esc(p.ip)}')">Проверить IP</button>` : ""}
+      <button class="btn" onclick="closeModal();openPmModal('${esc(p.steamid)}','${esc(p.name)}')">Написать в ЛС</button>
+      <button class="btn warn" onclick="closeModal();startCheck('${esc(p.steamid)}','${esc(p.name)}')">Проверка</button>
+      <button class="btn danger" onclick="closeModal();openBanModal('${esc(p.steamid)}','${esc(p.name)}')">Бан</button>
+    </div>
   `;
   document.getElementById("modal").classList.remove("hidden");
 }
@@ -450,7 +540,7 @@ async function loadChecks() {
     return;
   }
   if (!data.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">Проверок ещё не было. Откройте репорт и нажмите «Проверка».</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="empty">Проверок ещё не было. Откройте любую жалобу и нажмите «Проверка».</td></tr>';
     return;
   }
 
@@ -1193,7 +1283,7 @@ async function loadIpChecks() {
     return;
   }
   if (!data.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">Проверок ещё не было. Игроки проверяются автоматически при заходе, или проверь любой IP выше.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="empty">IP ещё не проверялся. Игроки проверяются автоматически при заходе на сервер, либо введите любой IP выше.</td></tr>';
     return;
   }
 
@@ -1420,6 +1510,8 @@ function openBanModal(steamid, name, ip, hwid) {
 }
 
 function closeModal() {
+  const card = document.getElementById("modalCard");
+  card.classList.remove("wide");
   document.getElementById("modal").classList.add("hidden");
 }
 

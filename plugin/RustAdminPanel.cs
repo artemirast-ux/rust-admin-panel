@@ -751,6 +751,7 @@ namespace Oxide.Plugins
             timer.Repeat(30f, 0, Heartbeat);
             timer.Repeat(300f, 0, LogOnlineHistory);
             timer.Repeat(60f, 0, RefreshAllMutes);
+            timer.Repeat(15f, 0, RefreshPings);
         }
 
         private void Unload()
@@ -1142,7 +1143,50 @@ namespace Oxide.Plugins
                     PrintError($"IP check parse error for {ip}: {ex.Message}");
                 }
 
-                var check = new JObject
+                // proxycheck.io without an API key returns no geo data at all (country
+                // stays null). Fall back to the free ip-api.com so the panel still shows
+                // a country and provider for the player.
+                if (string.IsNullOrEmpty(country))
+                {
+                    LookupGeoFallback(ip, geo =>
+                    {
+                        var check = new JObject
+                        {
+                            ["steamid"] = steamid,
+                            ["name"] = name,
+                            ["ip"] = ip,
+                            ["is_vpn"] = geo.isVpn,
+                            ["proxy_type"] = string.IsNullOrEmpty(geo.proxyType) ? proxyType : geo.proxyType,
+                            ["country"] = string.IsNullOrEmpty(geo.country) ? country : geo.country,
+                            ["country_code"] = string.IsNullOrEmpty(geo.countryCode) ? countryCode : geo.countryCode,
+                            ["isp"] = string.IsNullOrEmpty(geo.isp) ? isp : geo.isp,
+                            ["asn"] = string.IsNullOrEmpty(geo.asn) ? asn : geo.asn,
+                            ["risk"] = risk,
+                            ["source"] = source,
+                            ["created_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
+                        };
+                        Post("/rest/v1/ip_checks", check.ToString());
+
+                        if (!string.IsNullOrEmpty(steamid))
+                        {
+                            Patch($"/rest/v1/players?steamid=eq.{steamid}", new JObject
+                            {
+                                ["is_vpn"] = geo.isVpn,
+                                ["vpn_checked"] = true,
+                                ["country"] = check["country"],
+                                ["country_code"] = check["country_code"],
+                                ["isp"] = check["isp"],
+                                ["asn"] = check["asn"],
+                                ["proxy_type"] = check["proxy_type"]
+                            }.ToString());
+                        }
+
+                        done?.Invoke(geo.isVpn, check);
+                    });
+                    return;
+                }
+
+                var check2 = new JObject
                 {
                     ["steamid"] = steamid,
                     ["name"] = name,
@@ -1157,7 +1201,7 @@ namespace Oxide.Plugins
                     ["source"] = source,
                     ["created_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
                 };
-                Post("/rest/v1/ip_checks", check.ToString());
+                Post("/rest/v1/ip_checks", check2.ToString());
 
                 if (!string.IsNullOrEmpty(steamid))
                 {
@@ -1173,8 +1217,60 @@ namespace Oxide.Plugins
                     }.ToString());
                 }
 
-                done?.Invoke(isVpn, check);
+                done?.Invoke(isVpn, check2);
             }, this, RequestMethod.GET, null, 10f);
+        }
+
+        // Free geo lookup (ip-api.com, no key required). Only used as a fallback when
+        // proxycheck.io gave no country — the panel needs at least a flag + provider.
+        private void LookupGeoFallback(string ip, Action<GeoResult> done)
+        {
+            var geo = new GeoResult();
+            try
+            {
+                webrequest.Enqueue($"http://ip-api.com/json/{ip}?fields=status,country,countryCode,isp,as,proxy,hosting",
+                    null, (code, response) =>
+                    {
+                        try
+                        {
+                            if (code == 200 && !string.IsNullOrEmpty(response))
+                            {
+                                var o = JObject.Parse(response);
+                                if ((string)o["status"] == "success")
+                                {
+                                    geo.country = (string)o["country"];
+                                    geo.countryCode = (string)o["countryCode"];
+                                    geo.isp = (string)o["isp"];
+                                    geo.asn = (string)o["as"];
+                                    // ip-api flags hosting/proxy endpoints; treat them as a VPN signal.
+                                    bool proxy = (bool?)o["proxy"] == true || (bool?)o["hosting"] == true;
+                                    geo.isVpn = proxy;
+                                    geo.proxyType = proxy ? "hosting" : null;
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            PrintError($"ip-api parse error for {ip}: {ex.Message}");
+                        }
+                        done?.Invoke(geo);
+                    }, this, RequestMethod.GET, null, 8f);
+            }
+            catch (Exception ex)
+            {
+                PrintError($"ip-api request failed for {ip}: {ex.Message}");
+                done?.Invoke(geo);
+            }
+        }
+
+        private class GeoResult
+        {
+            public string country;
+            public string countryCode;
+            public string isp;
+            public string asn;
+            public bool isVpn;
+            public string proxyType;
         }
 
         private static string FormatIpResult(JObject o)
@@ -2009,7 +2105,11 @@ namespace Oxide.Plugins
             }
             try
             {
-                var netType = Type.GetType("Network.Net, Assembly-CSharp") ?? Type.GetType("Net, Assembly-CSharp");
+                // Rust's server keeps an average RTT per connection. The API moved
+                // between game versions (Net.sv -> Server.sv), so try both.
+                var netType = Type.GetType("Network.Net, Assembly-CSharp")
+                              ?? Type.GetType("Net, Assembly-CSharp")
+                              ?? Type.GetType("Server, Assembly-CSharp");
                 if (netType != null)
                 {
                     object svInstance = null;
@@ -2036,9 +2136,54 @@ namespace Oxide.Plugins
                         }
                     }
                 }
+
+                // Fallback: the connection itself exposes latency in recent Rust builds.
+                var connPing = connection.GetType().GetProperty("ping", BindingFlags.Public | BindingFlags.Instance);
+                if (connPing != null)
+                {
+                    object result = connPing.GetValue(connection, null);
+                    if (result != null)
+                    {
+                        return Convert.ToInt32(result);
+                    }
+                }
             }
             catch { }
             return 0;
+        }
+
+        // Refreshes ping for every online player so the panel always shows a live
+        // value instead of the number that was written when they joined.
+        private void RefreshPings()
+        {
+            if (!IsConfigured())
+            {
+                return;
+            }
+            try
+            {
+                foreach (BasePlayer player in BasePlayer.activePlayerList)
+                {
+                    if (player == null || player.Connection == null)
+                    {
+                        continue;
+                    }
+                    int ping = GetPing(player.Connection);
+                    if (ping <= 0)
+                    {
+                        continue;
+                    }
+                    string steamid = null;
+                    try { steamid = player.UserIDString; } catch { }
+                    if (string.IsNullOrEmpty(steamid))
+                    {
+                        continue;
+                    }
+                    Patch($"/rest/v1/players?steamid=eq.{steamid}&online=eq.true",
+                        new JObject { ["ping"] = ping }.ToString());
+                }
+            }
+            catch { }
         }
 
         private void SendMessage(BasePlayer player, string message)

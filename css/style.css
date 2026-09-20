@@ -154,10 +154,81 @@ nav {
 .server-info {
   color: var(--muted);
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .server-info b {
   color: var(--text);
+}
+
+.server-info .sep {
+  color: var(--border);
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot.on {
+  background: var(--ok);
+  box-shadow: 0 0 8px rgba(67, 182, 87, 0.8);
+}
+
+.dot.off {
+  background: var(--danger);
+}
+
+@media (max-width: 760px) {
+  #app {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: auto;
+    height: auto;
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 10px;
+  }
+
+  .brand {
+    width: 100%;
+    padding: 2px 6px 8px;
+  }
+
+  nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .nav-link {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  #btnLogout {
+    width: 100%;
+    margin-top: 6px;
+  }
+
+  .view {
+    padding: 14px;
+  }
+
+  .topbar {
+    position: static;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
 }
 
 .user-box {
@@ -806,4 +877,225 @@ nav {
 .chat-msg .time {
   color: var(--muted);
   font-size: 11px;
+}
+
+/* ---------- Players grid (cards) ---------- */
+
+.search-input {
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text);
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+}
+
+.players-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.pcard {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.pcard:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.pcard-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pcard-top .avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.pcard-name {
+  min-width: 0;
+  flex: 1;
+}
+
+.pcard-name b {
+  display: block;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ping-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.ping-tag.ok {
+  background: rgba(67, 182, 87, 0.15);
+  color: var(--ok);
+  border: 1px solid rgba(67, 182, 87, 0.4);
+}
+
+.ping-tag.warn {
+  background: rgba(232, 161, 58, 0.15);
+  color: var(--warn);
+  border: 1px solid rgba(232, 161, 58, 0.4);
+}
+
+.ping-tag.danger {
+  background: rgba(224, 82, 82, 0.15);
+  color: var(--danger);
+  border: 1px solid rgba(224, 82, 82, 0.4);
+}
+
+.ping-tag.muted {
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.pcard-flags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+  min-height: 22px;
+}
+
+.tag.dup {
+  background: rgba(232, 161, 58, 0.18);
+  color: var(--warn);
+  border: 1px solid rgba(232, 161, 58, 0.55);
+  cursor: pointer;
+}
+
+.pcard-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pcard-actions .btn {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+
+/* ---------- Player profile modal ---------- */
+
+.phead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.phead .avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.avatar.small {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.pgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 520px) {
+  .pgrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.prow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.pkey {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.modal-card h4 {
+  font-size: 13px;
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.linked-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.linked-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.linked-info b {
+  display: block;
+  font-size: 13px;
+}
+
+/* Wider modal for the player profile */
+#modalCard.wide {
+  width: 560px;
 }
