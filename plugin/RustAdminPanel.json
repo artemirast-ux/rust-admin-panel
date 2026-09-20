@@ -1,0 +1,26 @@
+{
+  "[Panel] Supabase project URL": "https://YOUR-PROJECT.supabase.co",
+  "[Panel] Supabase service role key (secret, plugin only)": "",
+  "[Panel] ProxyCheck.io API key (optional; empty = free anonymous tier)": "",
+  "[Panel] Re-check the same IP after (hours)": 12.0,
+  "[Panel] Kick players that use a VPN/proxy": false,
+  "[Panel] Command poll interval (seconds)": 5.0,
+  "[UI] Chat commands": [
+    "report",
+    "reports"
+  ],
+  "[UI] Report reasons": [
+    "Cheat",
+    "Macros",
+    "Abuse"
+  ],
+  "[UI] Cooldown between reports (seconds)": 300,
+  "[UI] Auto-parse reports from F7 (ingame reports)": true,
+  "[Chat] SteamID for message avatar": "76561198134964268",
+  "[Check] Command to send contact": "contact",
+  "[Check] Contact message shown to players": "Our Discord: discord.gg/yourservers",
+  "[Components вЂў Custom actions] Allow console command execution from panel": true,
+  "[Components вЂў Kills] Collect kills": true,
+  "[Components вЂў Mutes] Support mutes system": true,
+  "[Components вЂў Chat] Collect chat messages": true
+}

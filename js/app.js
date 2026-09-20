@@ -1,0 +1,1484 @@
+const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+let currentView = "dashboard";
+let currentUser = null;
+let pollTimer = null;
+
+const REPORT_REASONS = ["Cheat", "Macros", "Abuse"];
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("btnLogin").addEventListener("click", doLogin);
+  document.getElementById("btnLogout").addEventListener("click", doLogout);
+  document.getElementById("password").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doLogin();
+  });
+
+  document.querySelectorAll(".nav-link").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      switchView(link.dataset.view);
+    });
+  });
+
+  document.getElementById("modal").addEventListener("click", (e) => {
+    if (e.target.id === "modal") closeModal();
+  });
+
+  document.getElementById("btnCheckIp").addEventListener("click", () => {
+    const ip = document.getElementById("ipInput").value.trim();
+    if (ip) checkIp(ip);
+  });
+
+  document.getElementById("btnCheckSend").addEventListener("click", sendCheckMessage);
+  document.getElementById("btnCheckClose").addEventListener("click", closeCheckModal);
+  document.getElementById("btnCheckShow").addEventListener("click", showCheckTable);
+  document.getElementById("btnCheckClean").addEventListener("click", () => checkVerdict("clean"));
+  document.getElementById("btnCheckBan").addEventListener("click", () => checkVerdict("banned"));
+  document.getElementById("checkInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendCheckMessage();
+  });
+
+  document.getElementById("btnBroadcast").addEventListener("click", () => {
+    const msg = document.getElementById("broadcastInput").value.trim();
+    if (msg) sendBroadcast(msg);
+  });
+  document.getElementById("broadcastInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const msg = e.target.value.trim();
+      if (msg) sendBroadcast(msg);
+    }
+  });
+
+  document.getElementById("btnPmSend").addEventListener("click", sendPm);
+  document.getElementById("pmText").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendPm();
+  });
+  document.getElementById("btnMuteConfirm").addEventListener("click", confirmMute);
+
+  checkSession();
+});
+
+async function checkSession() {
+  const { data, error } = await sb.auth.getSession();
+  if (error || !data.session) {
+    showLogin();
+    return;
+  }
+  currentUser = data.session.user;
+  showApp();
+}
+
+async function doLogin() {
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "";
+
+  if (!email || !password) {
+    errEl.textContent = "Введите email и пароль";
+    return;
+  }
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    errEl.textContent = "Ошибка входа: " + error.message;
+    return;
+  }
+  currentUser = data.user;
+  showApp();
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+  currentUser = null;
+  showLogin();
+}
+
+function showLogin() {
+  document.getElementById("loginScreen").classList.remove("hidden");
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("email").value = "";
+  document.getElementById("password").value = "";
+}
+
+function showApp() {
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("userEmail").textContent = currentUser.email;
+  switchView("dashboard");
+  startPolling();
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  refreshAll();
+  pollTimer = setInterval(refreshAll, 10000);
+}
+
+function switchView(view) {
+  currentView = view;
+  document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+  const section = document.getElementById("view-" + view);
+  if (section) section.classList.add("active");
+
+  document.querySelectorAll(".nav-link").forEach((l) => {
+    l.classList.toggle("active", l.dataset.view === view);
+  });
+  refreshAll();
+}
+
+async function refreshAll() {
+  loadServerStatus();
+  loadDashboard();
+
+  if (currentView === "players") loadPlayers();
+  if (currentView === "reports") loadReports();
+  if (currentView === "checks") loadChecks();
+  if (currentView === "bans") loadBans();
+  if (currentView === "mutes") loadMutes();
+  if (currentView === "chat") loadChat();
+  if (currentView === "kills") loadKills();
+  if (currentView === "killanalysis") loadKillAnalysis();
+  if (currentView === "connections") loadConnections();
+  if (currentView === "ipchecks") loadIpChecks();
+  if (currentView === "actions") loadActions();
+}
+
+/* ---------- Server status ---------- */
+
+async function loadServerStatus() {
+  const { data } = await sb.from("server_status").select("*").eq("id", 1).maybeSingle();
+  const el = document.getElementById("serverInfo");
+  if (!data) {
+    el.innerHTML = "Сервер не в сети или плагин не настроен";
+    return;
+  }
+  const ago = Math.round((Date.now() - new Date(data.last_heartbeat).getTime()) / 1000);
+  const online = ago < 90;
+  el.innerHTML = `<b>${esc(data.hostname) || "Rust Server"}</b> — игроки: <b>${data.players_online}/${data.max_players}</b> — FPS: <b>${data.fps}</b> — <span class="tag ${online ? "ok" : "danger"}">${online ? "онлайн" : "оффлайн (" + ago + "с)"}</span>`;
+}
+
+/* ---------- Dashboard ---------- */
+
+async function loadDashboard() {  // NOTE: with head:true the count comes back NEXT TO data (as .count),
+  // not inside it. Reading data?.count always yields 0.
+  const [
+    { count: cOnline },
+    { count: cBans },
+    { count: cReports },
+    { count: cMutes },
+  ] = await Promise.all([
+    sb.from("players").select("id", { count: "exact", head: true }).eq("online", true),
+    sb.from("bans").select("id", { count: "exact", head: true }).eq("active", true),
+    sb.from("reports").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    sb.from("mutes").select("id", { count: "exact", head: true }).eq("active", true),
+  ]);
+
+  const { count: cVpn } = await sb.from("players").select("id", { count: "exact", head: true }).eq("online", true).eq("is_vpn", true);
+  const { count: cChecks } = await sb.from("checks").select("id", { count: "exact", head: true }).eq("status", "active");
+
+  const cards = [
+    { label: "Игроков онлайн", value: cOnline ?? 0, cls: "" },
+    { label: "С VPN", value: cVpn ?? 0, cls: "vpn" },
+    { label: "Активных банов", value: cBans ?? 0, cls: "danger" },
+    { label: "Репортов в очереди", value: cReports ?? 0, cls: "warn" },
+    { label: "Активных мутов", value: cMutes ?? 0, cls: "" },
+    { label: "Идёт проверок", value: cChecks ?? 0, cls: "warn" },
+  ];
+
+  document.getElementById("statCards").innerHTML = cards
+    .map(
+      (c) =>
+        `<div class="stat-card"><div class="label ${c.cls}">${c.label}</div><div class="value">${c.value}</div></div>`
+    )
+    .join("");
+
+  const badge = document.getElementById("reportsBadge");
+  const pending = cReports ?? 0;
+  badge.textContent = pending;
+  badge.classList.toggle("hidden", pending === 0);
+
+  const chkBadge = document.getElementById("checksBadge");
+  const activeCount = cChecks ?? 0;
+  chkBadge.textContent = activeCount;
+  chkBadge.classList.toggle("hidden", activeCount === 0);
+
+  loadOnlineChart();
+
+  const { data: recentReports } = await sb
+    .from("reports")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(8);
+
+  document.getElementById("recentReports").innerHTML = recentReports?.length
+    ? recentReports
+        .map(
+          (r) =>
+            `<div class="chat-line"><span class="who">${esc(r.target_name) || r.target_steamid}</span>${esc(r.reason)}<span class="time">${fmtTime(r.created_at)}</span></div>`
+        )
+        .join("")
+    : '<div class="empty">Нет репортов</div>';
+
+  const { data: recentConn } = await sb
+    .from("connection_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(8);
+
+  document.getElementById("recentConnections").innerHTML = recentConn?.length
+    ? recentConn
+        .map(
+          (c) =>
+            `<div class="chat-line"><span class="tag ${c.type === "join" ? "ok" : "muted"}">${c.type === "join" ? "зашёл" : "вышел"}</span> ${esc(c.name)} <span class="mono">${esc(c.ip)}</span><span class="time">${fmtTime(c.created_at)}</span></div>`
+        )
+        .join("")
+    : '<div class="empty">Нет подключений</div>';
+}
+
+/* ---------- Players ---------- */
+
+let allPlayers = []; // every known player (incl. offline), used for multi-account lookup
+
+async function loadPlayers() {
+  const [{ data, error }, { data: all }] = await Promise.all([
+    sb.from("players").select("*").eq("online", true).order("last_seen", { ascending: false }),
+    sb.from("players").select("steamid,name,ip,hwid,online,last_seen"),
+  ]);
+  allPlayers = all || [];
+
+  // Group players by IP / HWID to find shared accounts
+  const byKey = (list, key) => {
+    const m = {};
+    list.forEach((p) => {
+      const v = p[key];
+      if (v) (m[v] = m[v] || []).push(p.steamid);
+    });
+    return m;
+  };
+  const byIp = byKey(allPlayers, "ip");
+  const byHwid = byKey(allPlayers, "hwid");
+  const dupCount = (p) => {
+    const ipN = p.ip ? (byIp[p.ip] || []).filter((s) => s !== p.steamid).length : 0;
+    const hwN = p.hwid ? (byHwid[p.hwid] || []).filter((s) => s !== p.steamid).length : 0;
+    return ipN + hwN;
+  };
+
+  const body = document.getElementById("playersBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">Нет игроков онлайн</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map((p) => {
+      const dups = dupCount(p);
+      return `
+      <tr data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}">
+        <td><b>${esc(p.name)}</b></td>
+        <td class="mono">${esc(p.steamid)}</td>
+        <td class="mono">${esc(p.ip)}</td>
+        <td class="mono">${shortHwid(p.hwid)}</td>
+        <td>${countryFlag(p.country_code)} ${esc(p.country) || "—"}${dups ? ` <button class="btn small warn" title="Найдены аккаунты с таким же IP/HWID" onclick="showDuplicates('${p.steamid}')">${dups + 1} акк.</button>` : ""}</td>
+        <td>${p.is_vpn ? '<span class="tag vpn">VPN</span>' : p.vpn_checked ? '<span class="tag ok">чисто</span>' : '<span class="tag muted">проверка…</span>'}</td>
+        <td>${p.ping ?? 0} мс</td>
+        <td style="white-space:nowrap">
+          <button class="btn small danger" onclick="openBanModal('${p.steamid}', '${esc(p.name)}', '${esc(p.ip)}', '${esc(p.hwid)}')">Бан</button>
+          <button class="btn small" onclick="quickAction('kick','${p.steamid}','${esc(p.name)}')">Кик</button>
+          <button class="btn small" onclick="quickAction('mute','${p.steamid}','${esc(p.name)}')">Мут</button>
+          ${p.ip ? `<button class="btn small" title="Проверить IP на VPN" onclick="document.getElementById('ipInput').value='${esc(p.ip)}';checkIp('${esc(p.ip)}')">IP</button>` : ""}
+        </td>
+      </tr>`;
+    })
+    .join("");
+
+  // Right-click any player row -> quick actions (verify / pm / mute / ban)
+  body.querySelectorAll("tr[data-sid]").forEach((row) => {
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      playerCtxMenu(e.clientX, e.clientY, row.dataset.sid, row.dataset.name);
+    });
+  });
+}
+
+function playerCtxMenu(x, y, steamid, name) {
+  showCtxMenu(x, y, [
+    { label: "Вызвать на проверку", fn: () => startCheck(steamid, name) },
+    { label: "Ответить в ЛС", fn: () => openPmModal(steamid, name) },
+    { label: "Замутить", fn: () => openMuteModal(steamid, name) },
+    { label: "Забанить", fn: () => openBanModal(steamid, name) },
+  ]);
+}
+
+// Shows players that share an IP or HWID with the given player (multi-account check)
+function showDuplicates(steamid) {
+  const p = allPlayers.find((x) => x.steamid === steamid);
+  if (!p) return;
+
+  const linked = allPlayers.filter(
+    (x) =>
+      x.steamid !== steamid &&
+      ((p.ip && x.ip === p.ip) || (!!p.hwid && x.hwid === p.hwid))
+  );
+
+  const card = document.getElementById("modalCard");
+  card.innerHTML = `
+    <h3>Аккаунты с тем же IP / HWID</h3>
+    <p class="muted">${esc(p.name)} — IP <span class="mono">${esc(p.ip) || "—"}</span>, HWID <span class="mono">${shortHwid(p.hwid)}</span></p>
+    ${
+      linked.length
+        ? linked
+            .map(
+              (x) => `
+          <div class="chat-line">
+            <b>${esc(x.name)}</b> <span class="mono muted">${esc(x.steamid)}</span>
+            <span class="tag ${x.online ? "ok" : "muted"}">${x.online ? "онлайн" : "оффлайн"}</span>
+            <span class="time">${fmtTime(x.last_seen)}</span>
+          </div>`
+            )
+            .join("")
+        : '<div class="empty">Совпадений не найдено</div>'
+    }
+    <div class="row"><button class="btn" onclick="closeModal()">Закрыть</button></div>
+  `;
+  document.getElementById("modal").classList.remove("hidden");
+}
+
+/* ---------- Reports ---------- */
+
+async function loadReports() {
+  const { data, error } = await sb
+    .from("reports")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  const body = document.getElementById("reportsBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="7" class="empty">Ошибка загрузки</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">Нет репортов</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (r) => `
+      <tr data-sid="${esc(r.target_steamid || "")}" data-name="${esc(r.target_name || "")}">
+        <td><b>${esc(r.target_name) || r.target_steamid}</b><br><span class="mono muted">${esc(r.target_steamid)}</span></td>
+        <td>${esc(r.reason)}</td>
+        <td>${esc(r.reporter_name) || "—"}</td>
+        <td><span class="tag ${r.source === "f7" ? "warn" : "muted"}">${r.source}</span></td>
+        <td>${fmtTime(r.created_at)}</td>
+        <td><span class="tag ${r.status === "pending" ? "warn" : r.status === "banned" ? "danger" : "ok"}">${r.status}</span></td>
+        <td style="white-space:nowrap">
+          <button class="btn small warn" title="Открыть чат проверки" onclick="startCheck('${esc(r.target_steamid)}', '${esc(r.target_name)}')">Проверка</button>
+          <button class="btn small danger" onclick="openBanModal('${esc(r.target_steamid)}', '${esc(r.target_name)}')">Забанить</button>
+          <button class="btn small" onclick="markReportReviewed(${r.id})">Проверен</button>
+        </td>
+      </tr>`
+    )
+    .join("");
+
+  // Right-click on a report row: "Вызвать на проверку" (RustApp-style context menu)
+  document.querySelectorAll("#reportsBody tr[data-sid]").forEach((tr) => {
+    tr.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      reportCtxMenu(e.clientX, e.clientY, tr.dataset.sid, tr.dataset.name);
+    });
+  });
+}
+
+function reportCtxMenu(x, y, steamid, name) {
+  showCtxMenu(x, y, [
+    { label: "Вызвать на проверку", fn: () => startCheck(steamid, name) },
+    { label: "Забанить", fn: () => openBanModal(steamid, name) },
+  ]);
+}
+
+function showCtxMenu(x, y, items) {
+  const menu = document.getElementById("ctxMenu");
+  menu.innerHTML = items
+    .map((it, i) => `<div class="ctx-item" data-i="${i}">${esc(it.label)}</div>`)
+    .join("");
+  menu.classList.remove("hidden");
+
+  const rect = menu.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
+  if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8;
+  menu.style.left = x + "px";
+  menu.style.top = y + "px";
+
+  menu.querySelectorAll(".ctx-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      const item = items[parseInt(el.dataset.i, 10)];
+      hideCtxMenu();
+      if (item && item.fn) item.fn();
+    });
+  });
+}
+
+function hideCtxMenu() {
+  document.getElementById("ctxMenu").classList.add("hidden");
+}
+
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("ctxMenu");
+  if (!menu.classList.contains("hidden") && !e.target.closest(".ctx-menu")) {
+    hideCtxMenu();
+  }
+});
+
+/* ---------- Checks (verification sessions) ---------- */
+
+async function loadChecks() {
+  const { data, error } = await sb
+    .from("checks")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  const body = document.getElementById("checksBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">Проверок ещё не было. Откройте репорт и нажмите «Проверка».</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (c) => `
+      <tr>
+        <td><b>${esc(c.name) || c.steamid}</b></td>
+        <td class="mono">${esc(c.steamid)}</td>
+        <td>${esc(c.admin)}</td>
+        <td><span class="tag ${c.status === "active" ? "warn" : c.status === "banned" ? "danger" : "ok"}">${c.status === "active" ? "идёт" : c.status === "banned" ? "бан" : "чист"}</span></td>
+        <td>${c.shown ? '<span class="tag ok">показана</span>' : '<span class="tag muted">нет</span>'}</td>
+        <td>${fmtTime(c.created_at)}</td>
+        <td>${c.closed_at ? fmtTime(c.closed_at) : "—"}</td>
+        <td style="white-space:nowrap">
+          ${c.status === "active" ? `<button class="btn small primary" onclick="reopenCheck(${c.id})">Открыть чат</button>` : `<button class="btn small" onclick="reopenCheck(${c.id})">История</button>`}
+        </td>
+      </tr>`
+    )
+    .join("");
+}
+
+// Starts a verification session: sends the "check" command and waits for the
+// plugin to create the checks row, then opens the chat.
+async function startCheck(steamid, name) {
+  if (!steamid) return;
+
+  const sent = await sendCommand({ command: "check", steamid, name });
+  if (!sent) return;
+
+  let tries = 0;
+  const tick = async () => {
+    tries++;
+    const { data } = await sb
+      .from("checks")
+      .select("*")
+      .eq("steamid", steamid)
+      .eq("status", "active")
+      .order("id", { ascending: false })
+      .limit(1);
+
+    if (data && data.length) {
+      openCheckChat(data[0]);
+      return;
+    }
+
+    if (tries < 10) {
+      setTimeout(tick, 1500);
+    } else {
+      const { data: cmds } = await sb
+        .from("commands")
+        .select("status,result")
+        .eq("command", "check")
+        .eq("steamid", steamid)
+        .order("id", { ascending: false })
+        .limit(1);
+      const why = cmds && cmds[0] ? cmds[0].result : "нет ответа от сервера";
+      alert("Не удалось начать проверку: " + why);
+    }
+  };
+  setTimeout(tick, 1500);
+}
+
+let activeCheck = null;
+let checkPollTimer = null;
+
+function openCheckChat(check) {
+  if (!check) return;
+  activeCheck = check;
+
+  document.getElementById("checkHeader").innerHTML = `
+    <div><span class="who">${esc(check.name) || esc(check.steamid)}</span>
+      <span class="mono muted small" style="margin-left:8px">${esc(check.steamid)}</span></div>
+    <span class="tag ${check.status === "active" ? "warn" : check.status === "banned" ? "danger" : "ok"}">
+      ${check.status === "active" ? "проверка идёт" : check.status === "banned" ? "забанен" : "чист"}</span>
+  `;
+
+  const closed = check.status !== "active";
+  document.getElementById("checkInput").disabled = closed;
+  document.getElementById("btnCheckSend").disabled = closed;
+  document.getElementById("btnCheckShow").disabled = closed;
+  document.getElementById("btnCheckClean").disabled = closed;
+  document.getElementById("btnCheckBan").disabled = closed;
+
+  document.getElementById("checkEvents").innerHTML = '<div class="empty">Загрузка истории…</div>';
+  document.getElementById("checkModal").classList.remove("hidden");
+
+  loadCheckEvents();
+  if (checkPollTimer) clearInterval(checkPollTimer);
+  if (!closed) checkPollTimer = setInterval(loadCheckEvents, 3000);
+
+  setTimeout(() => document.getElementById("checkInput").focus(), 60);
+}
+
+async function reopenCheck(id) {
+  const { data } = await sb.from("checks").select("*").eq("id", id).maybeSingle();
+  if (data) openCheckChat(data);
+}
+
+async function loadCheckEvents() {
+  if (!activeCheck) return;
+  const id = activeCheck.id;
+
+  const { data } = await sb
+    .from("check_events")
+    .select("*")
+    .eq("check_id", id)
+    .order("created_at", { ascending: true })
+    .limit(300);
+
+  const el = document.getElementById("checkEvents");
+  if (!data) return;
+
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">Событий пока нет — напишите игроку первым</div>';
+    return;
+  }
+
+  el.innerHTML = data
+    .map((ev) => {
+      const t = fmtTime(ev.created_at);
+      if (ev.kind === "msg_admin") {
+        return `<div class="ev admin">${esc(ev.text)}<span class="time">${t}</span></div>`;
+      }
+      if (ev.kind === "chat" || ev.kind === "msg_player") {
+        return `<div class="ev player">${esc(ev.text)}<span class="time">игрок · ${t}</span></div>`;
+      }
+      if (ev.kind === "kill") {
+        return `<div class="ev sys kill">⚔ ${esc(ev.text)} <span class="time">${t}</span></div>`;
+      }
+      if (ev.kind === "death") {
+        return `<div class="ev sys death">💀 ${esc(ev.text)} <span class="time">${t}</span></div>`;
+      }
+      return `<div class="ev sys">${esc(ev.text)} <span class="time">${t}</span></div>`;
+    })
+    .join("");
+
+  el.scrollTop = el.scrollHeight;
+}
+
+function closeCheckModal() {
+  document.getElementById("checkModal").classList.add("hidden");
+  if (checkPollTimer) {
+    clearInterval(checkPollTimer);
+    checkPollTimer = null;
+  }
+  activeCheck = null;
+  if (currentView === "checks") loadChecks();
+}
+
+async function sendCheckMessage() {
+  if (!activeCheck) return;
+  const input = document.getElementById("checkInput");
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  const ok = await sendCommand({
+    command: "checkmsg",
+    steamid: activeCheck.steamid,
+    name: activeCheck.name,
+    message: msg,
+  });
+  if (ok) {
+    input.value = "";
+    setTimeout(loadCheckEvents, 900);
+  }
+}
+
+async function showCheckTable() {
+  if (!activeCheck) return;
+  await sendCommand({ command: "checkshow", steamid: activeCheck.steamid, name: activeCheck.name });
+}
+
+async function checkVerdict(verdict) {
+  if (!activeCheck) return;
+  const banned = verdict === "banned";
+
+  let reason = null;
+  if (banned) {
+    reason = prompt("Причина бана:", "Читы / стороннее ПО");
+    if (reason === null) return;
+    if (!confirm(`Забанить ${activeCheck.name || activeCheck.steamid}?`)) return;
+  } else {
+    if (!confirm(`Признать игрока ${activeCheck.name || activeCheck.steamid} чистым и закрыть проверку?`)) return;
+  }
+
+  await sendCommand({
+    command: "checkverdict",
+    steamid: activeCheck.steamid,
+    name: activeCheck.name,
+    message: verdict,
+    reason: banned ? (reason || "Читы / стороннее ПО") : null,
+  });
+
+  closeCheckModal();
+  if (currentView === "reports") loadReports();
+  refreshAll();
+}
+
+async function markReportReviewed(id) {
+  await sb.from("reports").update({ status: "reviewed" }).eq("id", id);
+  loadReports();
+}
+
+/* ---------- Bans ---------- */
+
+async function loadBans() {
+  const { data, error } = await sb
+    .from("bans")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  const body = document.getElementById("bansBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">Банов нет</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map((b) => {
+      const expired = b.expires_at && new Date(b.expires_at) < new Date();
+      const statusTag = !b.active
+        ? '<span class="tag muted">разбанен</span>'
+        : expired
+        ? '<span class="tag muted">истёк</span>'
+        : b.expires_at
+        ? '<span class="tag warn">временный</span>'
+        : '<span class="tag danger">навсегда</span>';
+      return `
+      <tr>
+        <td><b>${esc(b.name) || "—"}</b></td>
+        <td class="mono">${esc(b.steamid) || "—"}</td>
+        <td class="mono">${esc(b.ip) || "—"}</td>
+        <td class="mono">${shortHwid(b.hwid)}</td>
+        <td>${esc(b.reason)}</td>
+        <td>${esc(b.admin)}</td>
+        <td>${b.expires_at ? fmtTime(b.expires_at) : "—"}</td>
+        <td style="white-space:nowrap">${statusTag} ${b.active ? `<button class="btn small" onclick="quickAction('unban','${esc(b.steamid)}','${esc(b.name)}')">Разбанить</button>` : ""}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+/* ---------- Mutes ---------- */
+
+async function loadMutes() {
+  const { data, error } = await sb
+    .from("mutes")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  const body = document.getElementById("mutesBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">Ошибка загрузки</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Мутов нет</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (m) => `
+      <tr>
+        <td><b>${esc(m.name) || "—"}</b></td>
+        <td class="mono">${esc(m.steamid)}</td>
+        <td>${esc(m.reason)}</td>
+        <td>${esc(m.admin)}</td>
+        <td>${m.expires_at ? fmtTime(m.expires_at) : "—"}</td>
+        <td>${m.active ? `<button class="btn small" onclick="quickAction('unmute','${esc(m.steamid)}','${esc(m.name)}')">Снять мут</button>` : '<span class="tag muted">снят</span>'}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+/* ---------- Kill analysis (cheat detection) ---------- */
+
+// Distance limits (in meters) per weapon or weapon family. A kill above the
+// limit is suspicious for that weapon. Snipers are naturally long-range, so
+// their limits are much higher than rifles/SMGs.
+const DISTANCE_LIMITS = {
+  l96: 350, awm: 350, sniper: 350, m39: 250, bolt: 300,
+  ak47: 150, ak: 150, lr300: 180, lr: 180, m4: 150, ar: 150,
+  mp5: 60, mp5a4: 60, smg: 60, Thompson: 50, thompson: 50,
+  shotgun: 25, pump: 25, spas: 25, m870: 25, dbl: 20,
+  pistol: 60, revolver: 70, semi: 80, p250: 40, nailgun: 30,
+};
+
+// Anything longer than this for an unknown weapon is suspicious.
+const DEFAULT_DISTANCE_LIMIT = 150;
+// >= this many kills inside this window (ms) counts as an unreal kill streak.
+const STREAK_KILLS = 5;
+const STREAK_WINDOW_MS = 5000;
+// A player whose last kills are ALL headshots and he has at least this many is flagged.
+const HEADSHOT_MIN_KILLS = 5;
+
+function weaponLimit(weapon) {
+  const w = String(weapon || "").toLowerCase();
+  for (const key of Object.keys(DISTANCE_LIMITS)) {
+    if (w.includes(key)) return DISTANCE_LIMITS[key];
+  }
+  return DEFAULT_DISTANCE_LIMITS;
+}
+
+async function loadKillAnalysis() {
+  const { data, error } = await sb
+    .from("kills")
+    .select("attacker_steamid,attacker_name,victim_name,weapon,distance,headshot,created_at")
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  const el = document.getElementById("suspiciousList");
+  if (error || !data) {
+    el.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(error?.message || "")}</div>`;
+    return;
+  }
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">Убийств пока не записано</div>';
+    return;
+  }
+
+  // group kills by attacker
+  const byAttacker = {};
+  data.forEach((k) => {
+    const id = k.attacker_steamid || k.attacker_name;
+    if (!id) return;
+    (byAttacker[id] = byAttacker[id] || {
+      steamid: k.attacker_steamid,
+      name: k.attacker_name,
+      kills: [],
+    }).kills.push(k);
+  });
+
+  const flagged = [];
+  Object.values(byAttacker).forEach((p) => {
+    const issues = [];
+    const kills = p.kills;
+    if (kills.length < 3) return;
+
+    // 1) unreal kill streak: many kills within a few seconds
+    const times = kills.map((k) => new Date(k.created_at).getTime()).sort((a, b) => a - b);
+    let bestStreak = 1;
+    let streak = 1;
+    for (let i = 1; i < times.length; i++) {
+      if (times[i] - times[i - 1] <= STREAK_WINDOW_MS) {
+        streak++;
+        bestStreak = Math.max(bestStreak, streak);
+      } else {
+        streak = 1;
+      }
+    }
+    if (bestStreak >= STREAK_KILLS) {
+      issues.push({
+        type: "streak",
+        text: `Серия: ${bestStreak} убийств за ${STREAK_WINDOW_MS / 1000} сек`,
+      });
+    }
+
+    // 2) headshot only
+    const hsCount = kills.filter((k) => k.headshot).length;
+    if (hsCount >= HEADSHOT_MIN_KILLS && hsCount === kills.length) {
+      issues.push({
+        type: "headshot",
+        text: `Только в голову: ${hsCount}/${kills.length} убийств`,
+      });
+    }
+
+    // 3) huge distances for the weapon used
+    const farKills = kills.filter((k) => (k.distance || 0) > weaponLimit(k.weapon));
+    if (farKills.length >= 2) {
+      const worst = farKills.reduce((a, b) => (b.distance > a.distance ? b : a));
+      issues.push({
+        type: "distance",
+        text: `${farKills.length} убийств с огромной дистанции (макс ${Math.round(worst.distance)}м, ${esc(worst.weapon)})`,
+      });
+    }
+
+    if (issues.length) {
+      flagged.push({ ...p, issues, kills });
+    }
+  });
+
+  flagged.sort((a, b) => b.kills.length - a.kills.length);
+
+  const badge = document.getElementById("suspiciousBadge");
+  badge.textContent = flagged.length;
+  badge.classList.toggle("hidden", flagged.length === 0);
+
+  if (!flagged.length) {
+    el.innerHTML = '<div class="empty">Подозрительной активности не обнаружено</div>';
+    return;
+  }
+
+  el.innerHTML = flagged
+    .map(
+      (p, i) => `
+      <div class="suspicious-card">
+        <div class="susp-head">
+          <span class="avatar" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
+          <div class="susp-info">
+            <div><b>${esc(p.name) || "—"}</b> <span class="mono muted small">${esc(p.steamid || "")}</span></div>
+            <div class="muted small">всего убийств: ${p.kills.length}</div>
+          </div>
+          <div class="susp-flags">
+            ${p.issues.map((x) => `<span class="tag danger">${esc(x.text)}</span>`).join(" ")}
+          </div>
+        </div>
+        <div class="susp-actions">
+          <button class="btn small" onclick="copySuspect(${i})">Скопировать статистику</button>
+          <button class="btn small warn" onclick="startCheck('${esc(p.steamid)}', '${esc(p.name)}')">Проверка</button>
+          <button class="btn small danger" onclick="openBanModal('${esc(p.steamid)}', '${esc(p.name)}')">Бан</button>
+        </div>
+      </div>`
+    )
+    .join("");
+
+  window._suspects = flagged;
+}
+
+// Builds a plain-text report of the suspicious player, ready to paste anywhere.
+function copySuspect(i) {
+  const p = (window._suspects || [])[i];
+  if (!p) return;
+
+  const lines = [
+    `Игрок: ${p.name}`,
+    `SteamID: ${p.steamid}`,
+    `Всего убийств: ${p.kills.length}`,
+    "",
+    "Причины подозрения:",
+    ...p.issues.map((x) => `- ${x.text.replace(/<[^>]*>/g, "")}`),
+    "",
+    "Последние убийства:",
+    ...p.kills
+      .slice(0, 10)
+      .map(
+        (k) =>
+          `- ${fmtTime(k.created_at)} | ${k.weapon} | ${Math.round(k.distance || 0)}м${k.headshot ? " | в голову" : ""} | жертва: ${k.victim_name}`
+      ),
+  ];
+
+  const text = lines.join("\n");
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => alert("Статистика скопирована"));
+  } else {
+    prompt("Скопируйте текст:", text);
+  }
+}
+
+async function loadOnlineChart() {
+  const { data } = await sb
+    .from("online_history")
+    .select("players_online,created_at")
+    .order("created_at", { ascending: true })
+    .limit(300);
+
+  const el = document.getElementById("onlineChart");
+  if (!el) return;
+
+  if (!data || data.length < 2) {
+    el.innerHTML = '<div class="empty">История онлайна ещё собирается (плагин пишет точку каждые 5 минут)</div>';
+    return;
+  }
+
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const rows = data.filter((r) => new Date(r.created_at).getTime() >= dayAgo);
+  if (rows.length < 2) {
+    el.innerHTML = '<div class="empty">Слишком мало данных за 24 часа</div>';
+    return;
+  }
+
+  const max = Math.max(1, ...rows.map((r) => r.players_online));
+
+  // Draw a real line chart (SVG) instead of bars: x = time, y = players online.
+  const W = 1000;
+  const H = 140;
+  const padX = 6;
+  const padY = 10;
+
+  const n = rows.length;
+  const points = rows.map((r, i) => {
+    const x = padX + (n === 1 ? W / 2 : (i / (n - 1)) * (W - padX * 2));
+    const y = H - padY - (r.players_online / max) * (H - padY * 2);
+    return { x, y, r };
+  });
+
+  const linePath = points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+    .join(" ");
+  const areaPath =
+    `M${points[0].x.toFixed(1)},${H - padY} ` +
+    points.map((p) => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") +
+    ` L${points[n - 1].x.toFixed(1)},${H - padY} Z`;
+
+  const peak = rows.reduce((a, b) => (b.players_online > a.players_online ? b : a));
+  const peakIdx = rows.indexOf(peak);
+  const peakX = points[peakIdx].x.toFixed(1);
+  const peakY = points[peakIdx].y.toFixed(1);
+
+  el.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="online-svg" role="img" aria-label="Онлайн за 24 часа">
+      <defs>
+        <linearGradient id="onlineGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#onlineGrad)" />
+      <path d="${linePath}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" />
+      <circle cx="${peakX}" cy="${peakY}" r="3.5" fill="var(--warn)" vector-effect="non-scaling-stroke" />
+      <text x="${peakX}" y="${Math.max(10, parseFloat(peakY) - 6).toFixed(1)}" text-anchor="middle" fill="var(--warn)" font-size="11">макс: ${peak.players_online}</text>
+    </svg>
+    <div class="chart-labels"><span>${fmtTime(rows[0].created_at)}</span><span>сейчас: ${rows[n - 1].players_online}</span></div>
+  `;
+}
+
+/* ---------- Chat ---------- */
+
+async function loadChat() {
+  const { data, error } = await sb
+    .from("chat_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(300);
+
+  const el = document.getElementById("chatLog");
+  if (error || !data) {
+    el.innerHTML = '<div class="empty">Ошибка загрузки</div>';
+    return;
+  }
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">Сообщений нет</div>';
+    return;
+  }
+
+  // newest at the bottom, like a real chat
+  el.innerHTML = data
+    .slice()
+    .reverse()
+    .map(
+      (m) =>
+        `<div class="chat-msg" data-sid="${esc(m.steamid || "")}" data-name="${esc(m.name || "")}">
+          <div class="avatar" style="background:${avatarColor(m.name)}">${initials(m.name)}</div>
+          <div class="body">
+            <div class="meta">
+              <span class="nick">${esc(m.name) || "—"}</span>
+              <span class="time">${fmtTime(m.created_at)}</span>
+            </div>
+            <div class="text">${esc(m.message)}</div>
+          </div>
+        </div>`
+    )
+    .join("");
+
+  el.scrollTop = el.scrollHeight;
+
+  // Right-click ANYWHERE on a chat line (name, avatar or the message itself)
+  el.querySelectorAll(".chat-msg[data-sid]").forEach((row) => {
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      chatCtxMenu(e.clientX, e.clientY, row.dataset.sid, row.dataset.name);
+    });
+  });
+}
+
+function chatCtxMenu(x, y, steamid, name) {
+  showCtxMenu(x, y, [
+    { label: "Ответить в ЛС", fn: () => openPmModal(steamid, name) },
+    { label: "Замутить", fn: () => openMuteModal(steamid, name) },
+  ]);
+}
+
+async function sendBroadcast(message) {
+  const input = document.getElementById("broadcastInput");
+  const ok = await sendCommand({ command: "broadcast", message });
+  if (ok) {
+    input.value = "";
+    refreshAll();
+  }
+}
+
+/* ---------- PM modal ---------- */
+
+let pmTarget = null;
+
+function openPmModal(steamid, name) {
+  pmTarget = { steamid, name };
+  document.getElementById("pmTitle").textContent = "Личное сообщение";
+  document.getElementById("pmTarget").textContent = name || steamid;
+  document.getElementById("pmText").value = "";
+  document.getElementById("pmModal").classList.remove("hidden");
+  setTimeout(() => document.getElementById("pmText").focus(), 60);
+}
+
+function closePmModal() {
+  document.getElementById("pmModal").classList.add("hidden");
+  pmTarget = null;
+}
+
+async function sendPm() {
+  if (!pmTarget) return;
+  const text = document.getElementById("pmText").value.trim();
+  if (!text) return;
+
+  const ok = await sendCommand({
+    command: "say",
+    steamid: pmTarget.steamid,
+    name: pmTarget.name,
+    message: text,
+  });
+  if (ok) closePmModal();
+}
+
+/* ---------- Mute modal ---------- */
+
+let muteTarget = null;
+
+function openMuteModal(steamid, name) {
+  if (!steamid) {
+    alert("У сообщения нет SteamID — игрок, возможно, уже вышел");
+    return;
+  }
+  muteTarget = { steamid, name };
+  document.getElementById("muteTarget").textContent = name || steamid;
+  document.getElementById("muteReason").value = "Спам / токсичность";
+  document.getElementById("muteDuration").value = "60";
+  document.getElementById("muteModal").classList.remove("hidden");
+  setTimeout(() => document.getElementById("muteReason").focus(), 60);
+}
+
+function closeMuteModal() {
+  document.getElementById("muteModal").classList.add("hidden");
+  muteTarget = null;
+}
+
+async function confirmMute() {
+  if (!muteTarget) return;
+  const reason = document.getElementById("muteReason").value.trim() || "Спам / токсичность";
+  const d = document.getElementById("muteDuration").value.trim();
+  const duration = d && !isNaN(d) ? parseInt(d, 10) : null;
+
+  const ok = await sendCommand({
+    command: "mute",
+    steamid: muteTarget.steamid,
+    name: muteTarget.name,
+    reason,
+    duration_minutes: duration,
+  });
+  if (ok) {
+    closeMuteModal();
+    refreshAll();
+  }
+}
+
+/* ---------- Kills ---------- */
+
+async function loadKills() {
+  const { data, error } = await sb
+    .from("kills")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  const body = document.getElementById("killsBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">Убийств нет</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (k) => `
+      <tr>
+        <td><b>${esc(k.attacker_name)}</b></td>
+        <td>${esc(k.victim_name)}</td>
+        <td>${esc(k.weapon)}</td>
+        <td>${k.distance ? k.distance + " м" : "—"}</td>
+        <td>${fmtTime(k.created_at)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+/* ---------- Connections ---------- */
+
+async function loadConnections() {
+  const { data, error } = await sb
+    .from("connection_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  const body = document.getElementById("connectionsBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">Подключений нет</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (c) => `
+      <tr>
+        <td><b>${esc(c.name)}</b></td>
+        <td class="mono">${esc(c.steamid)}</td>
+        <td class="mono">${esc(c.ip)}</td>
+        <td><span class="tag ${c.type === "join" ? "ok" : "muted"}">${c.type === "join" ? "зашёл" : "вышел"}</span></td>
+        <td>${fmtTime(c.created_at)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+/* ---------- IP checks ---------- */
+
+async function loadIpChecks() {
+  const { data, error } = await sb
+    .from("ip_checks")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  const body = document.getElementById("ipChecksBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">Проверок ещё не было. Игроки проверяются автоматически при заходе, или проверь любой IP выше.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (c) => `
+      <tr>
+        <td class="mono"><b>${esc(c.ip)}</b></td>
+        <td>${c.name ? `<b>${esc(c.name)}</b>` : '<span class="muted">ручная</span>'}</td>
+        <td>${countryFlag(c.country_code)} ${esc(c.country) || "—"}</td>
+        <td>${esc(c.isp) || "—"}<br><span class="muted mono small">${esc(c.asn) || ""}</span></td>
+        <td>${esc(c.proxy_type) || (c.is_vpn ? "VPN" : "—")}</td>
+        <td>${c.is_vpn ? '<span class="tag vpn">VPN/PROXY</span>' : '<span class="tag ok">чисто</span>'}</td>
+        <td>${riskTag(c.risk)}</td>
+        <td>${fmtTime(c.created_at)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+// Sends the "checkip" command to the plugin and waits for the fresh ip_checks row.
+let lastCheckId = 0;
+
+async function checkIp(ip) {
+  const status = document.getElementById("checkIpStatus");
+  status.textContent = "Отправлено на сервер, жду результат…";
+
+  const sent = await sendCommand({ command: "checkip", ip });
+  if (!sent) {
+    status.textContent = "Не удалось отправить";
+    return;
+  }
+
+  // The plugin executes the lookup (a few seconds), then inserts an ip_checks row
+  // with source=manual. Poll a couple of times until it appears.
+  const before = Date.now();
+  let tries = 0;
+  const tick = async () => {
+    tries++;
+    const { data } = await sb
+      .from("ip_checks")
+      .select("*")
+      .eq("ip", ip)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const row = data && data[0];
+    if (row && new Date(row.created_at).getTime() >= before - 30000) {
+      status.innerHTML = row.is_vpn
+        ? `<span class="tag vpn">VPN/PROXY${row.proxy_type ? " (" + esc(row.proxy_type) + ")" : ""}</span> ${countryFlag(row.country_code)} ${esc(row.country)} · ${esc(row.isp)}`
+        : `<span class="tag ok">чисто</span> ${countryFlag(row.country_code)} ${esc(row.country)} · ${esc(row.isp)}`;
+      loadIpChecks();
+      return;
+    }
+    if (tries < 8) {
+      setTimeout(tick, 2000);
+    } else {
+      status.textContent = "Ответ не пришёл — проверь, что плагин запущен";
+    }
+  };
+  setTimeout(tick, 2500);
+}
+
+/* ---------- Actions (commands) ---------- */
+
+async function loadActions() {
+  const { data, error } = await sb
+    .from("commands")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  const body = document.getElementById("actionsBody");
+  if (error || !data) {
+    body.innerHTML = `<tr><td colspan="7" class="empty">Ошибка загрузки</td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">Действий пока не было</td></tr>';
+    return;
+  }
+
+  body.innerHTML = data
+    .map(
+      (c) => `
+      <tr>
+        <td><span class="tag ${c.command === "ban" ? "danger" : c.command === "kick" ? "warn" : "muted"}">${c.command}</span></td>
+        <td>${esc(c.name) || esc(c.steamid) || "—"}</td>
+        <td>${esc(c.reason || c.message || "")}</td>
+        <td>${esc(c.admin)}</td>
+        <td><span class="tag ${c.status === "done" ? "ok" : c.status === "failed" ? "danger" : "warn"}">${c.status}</span></td>
+        <td class="muted">${esc(c.result || "")}</td>
+        <td>${fmtTime(c.created_at)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+/* ---------- Command dispatch ---------- */
+
+async function sendCommand(payload) {
+  const row = {
+    command: payload.command,
+    steamid: payload.steamid || null,
+    ip: payload.ip || null,
+    hwid: payload.hwid || null,
+    name: payload.name || null,
+    reason: payload.reason || null,
+    message: payload.message || null,
+    duration_minutes: payload.duration_minutes || null,
+    admin: currentUser.email,
+    status: "pending",
+  };
+
+  const { error } = await sb.from("commands").insert([row]);
+  if (error) {
+    alert("Не удалось отправить команду: " + error.message);
+    return false;
+  }
+  return true;
+}
+
+async function quickAction(action, steamid, name) {
+  if (action === "ban") {
+    openBanModal(steamid, name);
+    return;
+  }
+
+  let reason = "";
+  let duration = null;
+
+  if (action === "kick") {
+    reason = prompt("Причина кика:", "Чит / нарушение правил");
+    if (reason === null) return;
+  } else if (action === "mute") {
+    reason = prompt("Причина мута:", "Спам / токсичность");
+    if (reason === null) return;
+    const d = prompt("Длительность мута в минутах (пусто = навсегда):", "60");
+    if (d === null) return;
+    duration = d && !isNaN(d) ? parseInt(d) : null;
+  } else if (action === "unban" || action === "unmute") {
+    const verb = action === "unban" ? "разбанить" : "размутить";
+    if (!confirm(`Точно ${verb} ${name || steamid}?`)) return;
+  }
+
+  await sendCommand({
+    command: action,
+    steamid,
+    name,
+    reason,
+    duration_minutes: duration,
+  });
+  refreshAll();
+}
+
+/* ---------- Ban modal ---------- */
+
+function openBanModal(steamid, name, ip, hwid) {
+  const card = document.getElementById("modalCard");
+  card.innerHTML = `
+    <h3>Бан игрока</h3>
+    ${name ? `<p class="muted">${esc(name)}</p>` : ""}
+    <label>SteamID</label>
+    <input id="banSteamid" value="${esc(steamid) || ""}" placeholder="76561198000000000" />
+
+    <label>IP (необязательно)</label>
+    <input id="banIp" value="${esc(ip) || ""}" placeholder="1.2.3.4" />
+
+    <label>HWID (необязательно)</label>
+    <input id="banHwid" value="${esc(hwid) || ""}" placeholder="hwid" />
+
+    <label>Причина</label>
+    <select id="banReason">
+      ${REPORT_REASONS.map((r) => `<option>${r}</option>`).join("")}
+      <option>Чит</option>
+      <option>Макросы</option>
+      <option>Токсичность</option>
+      <option>Другое</option>
+    </select>
+    <input id="banReasonCustom" placeholder="Своя причина (переопределяет выбор)" style="margin-top:6px" />
+
+    <label>Длительность</label>
+    <select id="banDuration">
+      <option value="">Навсегда</option>
+      <option value="60">1 час</option>
+      <option value="1440">1 день</option>
+      <option value="10080">7 дней</option>
+      <option value="43200">30 дней</option>
+    </select>
+
+    <div class="check-row">
+      <label><input type="checkbox" id="banByIp" ${ip ? "checked" : ""} /> Бан по IP</label>
+      <label><input type="checkbox" id="banByHwid" ${hwid ? "checked" : ""} /> Бан по HWID</label>
+    </div>
+
+    <div class="row">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn danger" id="btnConfirmBan">Забанить</button>
+    </div>
+  `;
+
+  document.getElementById("btnConfirmBan").addEventListener("click", async () => {
+    const byIp = document.getElementById("banByIp").checked;
+    const byHwid = document.getElementById("banByHwid").checked;
+    const custom = document.getElementById("banReasonCustom").value.trim();
+    const duration = document.getElementById("banDuration").value;
+
+    const ok = await sendCommand({
+      command: "ban",
+      steamid: document.getElementById("banSteamid").value.trim(),
+      ip: byIp ? document.getElementById("banIp").value.trim() : null,
+      hwid: byHwid ? document.getElementById("banHwid").value.trim() : null,
+      name: name || null,
+      reason: custom || document.getElementById("banReason").value,
+      duration_minutes: duration ? parseInt(duration) : null,
+    });
+
+    if (ok) {
+      closeModal();
+      refreshAll();
+    }
+  });
+
+  document.getElementById("modal").classList.remove("hidden");
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.add("hidden");
+}
+
+/* ---------- Utils ---------- */
+
+function esc(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function shortHwid(hwid) {
+  if (!hwid) return "—";
+  return hwid.length > 12 ? hwid.substring(0, 12) + "…" : hwid;
+}
+
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Turns a two-letter country code into an emoji flag (Regional Indicator Symbols)
+function countryFlag(cc) {
+  if (!cc || cc.length !== 2 || !/^[a-zA-Z]{2}$/.test(cc)) return "";
+  const base = 0x1f1e6;
+  const offset = (ch) => ch.toUpperCase().charCodeAt(0) - "A".charCodeAt(0);
+  return String.fromCodePoint(base + offset(cc[0]), base + offset(cc[1]));
+}
+
+// proxycheck.io risk score: 0-32 low, 33-65 medium, 66+ high
+function riskTag(risk) {
+  if (risk === null || risk === undefined) return "—";
+  const cls = risk >= 66 ? "vpn" : risk >= 33 ? "warn" : "ok";
+  return `<span class="tag ${cls}">${risk}</span>`;
+}
+
+// Deterministic color from a nickname, so the same player always gets the same avatar color
+function avatarColor(name) {
+  const palette = ["#4f8cff", "#e05252", "#43b657", "#e8a13a", "#c061ff", "#2fb6a8", "#d1639b", "#8a94a3"];
+  let hash = 0;
+  const s = String(name || "?");
+  for (let i = 0; i < s.length; i++) {
+    hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  }
+  return palette[hash % palette.length];
+}
+
+function initials(name) {
+  const s = String(name || "?").trim();
+  if (!s) return "?";
+  return s.charAt(0).toUpperCase();
+}

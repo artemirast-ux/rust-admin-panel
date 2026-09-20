@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RustAdminPanel — панель администратора</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="loginScreen" class="hidden">
+    <div class="login-card">
+      <h1>RustAdminPanel</h1>
+      <p class="muted">Вход для администраторов</p>
+      <input id="email" type="email" placeholder="Email" autocomplete="username" />
+      <input id="password" type="password" placeholder="Пароль" autocomplete="current-password" />
+      <button id="btnLogin" class="btn primary">Войти</button>
+      <p id="loginError" class="error"></p>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <aside class="sidebar">
+      <div class="brand">RustAdminPanel</div>
+      <nav>
+        <a href="#" class="nav-link active" data-view="dashboard">Дашборд</a>
+        <a href="#" class="nav-link" data-view="players">Игроки онлайн</a>
+        <a href="#" class="nav-link" data-view="reports">Репорты <span id="reportsBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="checks">Проверки <span id="checksBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="bans">Баны</a>
+        <a href="#" class="nav-link" data-view="mutes">Муты</a>
+        <a href="#" class="nav-link" data-view="chat">Чат-лог</a>
+        <a href="#" class="nav-link" data-view="kills">Убийства</a>
+        <a href="#" class="nav-link" data-view="killanalysis">Анализ киллов <span id="suspiciousBadge" class="badge hidden"></span></a>
+        <a href="#" class="nav-link" data-view="connections">Подключения</a>
+        <a href="#" class="nav-link" data-view="ipchecks">IP-проверки</a>
+        <a href="#" class="nav-link" data-view="actions">Действия</a>
+      </nav>
+      <button id="btnLogout" class="btn">Выйти</button>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div id="serverInfo" class="server-info">Загрузка сервера…</div>
+        <div class="user-box">
+          <span id="userEmail"></span>
+        </div>
+      </header>
+
+      <section id="view-dashboard" class="view active">
+        <div class="cards" id="statCards"></div>
+        <div class="panel">
+          <h3>Онлайн за последние 24 часа</h3>
+          <div id="onlineChart" class="online-chart"></div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <h3>Последние репорты</h3>
+            <div id="recentReports"></div>
+          </div>
+          <div class="panel">
+            <h3>Последние подключения</h3>
+            <div id="recentConnections"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-players" class="view">
+        <div class="panel">
+          <h3>Игроки на сервере</h3>
+          <table class="table">
+            <thead>
+              <tr><th>Ник</th><th>SteamID</th><th>IP</th><th>HWID</th><th>Страна</th><th>VPN</th><th>Ping</th><th>Действия</th></tr>
+            </thead>
+            <tbody id="playersBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-reports" class="view">
+        <div class="panel">
+          <h3>Репорты игроков <span class="muted small">(ПКМ по игроку — вызвать на проверку)</span></h3>
+          <table class="table">
+            <thead>
+              <tr><th>Жалоба на</th><th>Причина</th><th>От кого</th><th>Источник</th><th>Время</th><th>Статус</th><th>Действия</th></tr>
+            </thead>
+            <tbody id="reportsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-checks" class="view">
+        <div class="panel">
+          <h3>Проверки игроков</h3>
+          <p class="muted small" style="margin-bottom:12px">Сессия открывается из раздела «Репорты» (правый клик по игроку → «Вызвать на проверку»). В чате видно, что игрок пишет и кого убивает, можно ответить ему, показать табличку в игре и вынести вердикт.</p>
+          <table class="table">
+            <thead>
+              <tr><th>Игрок</th><th>SteamID</th><th>Админ</th><th>Статус</th><th>Табличка</th><th>Начата</th><th>Закрыта</th><th>Действия</th></tr>
+            </thead>
+            <tbody id="checksBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-bans" class="view">
+        <div class="panel">
+          <h3>Список банов</h3>
+          <table class="table">
+            <thead>
+              <tr><th>Ник</th><th>SteamID</th><th>IP</th><th>HWID</th><th>Причина</th><th>Админ</th><th>Истекает</th><th>Действия</th></tr>
+            </thead>
+            <tbody id="bansBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-mutes" class="view">
+        <div class="panel">
+          <h3>Список мутов</h3>
+          <table class="table">
+            <thead>
+              <tr><th>Ник</th><th>SteamID</th><th>Причина</th><th>Админ</th><th>Истекает</th><th>Действия</th></tr>
+            </thead>
+            <tbody id="mutesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-chat" class="view">
+        <div class="panel">
+          <h3>Чат сервера <span class="muted small">(ПКМ по игроку — ответить в ЛС / замутить)</span></h3>
+          <div class="chat-broadcast">
+            <input id="broadcastInput" placeholder="Написать всем игрокам на сервере…" autocomplete="off" />
+            <button class="btn primary" id="btnBroadcast">Всем</button>
+          </div>
+          <div id="chatLog" class="chat-log"></div>
+        </div>
+      </section>
+
+      <section id="view-kills" class="view">
+        <div class="panel">
+          <h3>Лог убийств</h3>
+          <table class="table">
+            <thead>
+              <tr><th>Киллер</th><th>Жертва</th><th>Оружие</th><th>Дистанция</th><th>Время</th></tr>
+            </thead>
+            <tbody id="killsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-killanalysis" class="view">
+        <div class="panel">
+          <h3>Анализ убийств — подозрительная активность</h3>
+          <p class="muted small" style="margin-bottom:12px">Автоматический поиск читеров по последним убийствам: серии убийств за короткое время, выстрелы только в голову, убийства с неестественно больших дистанций. Нажми на игрока, чтобы посмотреть детали и скопировать статистику.</p>
+          <div id="suspiciousList"></div>
+        </div>
+      </section>
+
+      <section id="view-connections" class="view">
+        <div class="panel">
+          <h3>Лог подключений</h3>
+          <table class="table">
+            <thead>
+              <tr><th>Ник</th><th>SteamID</th><th>IP</th><th>Событие</th><th>Время</th></tr>
+            </thead>
+            <tbody id="connectionsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-actions" class="view">
+        <div class="panel">
+          <h3>История действий администраторов</h3>
+          <table class="table">
+            <thead>
+              <tr><th>Команда</th><th>Цель</th><th>Причина</th><th>Админ</th><th>Статус</th><th>Результат</th><th>Время</th></tr>
+            </thead>
+            <tbody id="actionsBody"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="view-ipchecks" class="view">
+        <div class="panel">
+          <h3>Проверка IP на VPN / прокси</h3>
+          <div class="check-form">
+            <input id="ipInput" placeholder="IP-адрес, например 1.2.3.4" />
+            <button class="btn primary" id="btnCheckIp">Проверить</button>
+            <span id="checkIpStatus" class="muted"></span>
+          </div>
+          <table class="table">
+            <thead>
+              <tr><th>IP</th><th>Игрок</th><th>Страна</th><th>Провайдер / ASN</th><th>Тип</th><th>VPN</th><th>Риск</th><th>Время</th></tr>
+            </thead>
+            <tbody id="ipChecksBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-card" id="modalCard"></div>
+  </div>
+
+  <div id="ctxMenu" class="ctx-menu hidden"></div>
+
+  <div id="pmModal" class="modal hidden">
+    <div class="modal-card">
+      <h3 id="pmTitle">Личное сообщение</h3>
+      <p class="muted small" id="pmTarget"></p>
+      <label>Сообщение</label>
+      <input id="pmText" placeholder="Введите текст…" autocomplete="off" />
+      <div class="row">
+        <button class="btn" onclick="closePmModal()">Отмена</button>
+        <button class="btn primary" id="btnPmSend">Отправить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="muteModal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Мут игрока</h3>
+      <p class="muted small" id="muteTarget"></p>
+      <label>Причина</label>
+      <input id="muteReason" value="Спам / токсичность" />
+      <label>Длительность (минут, пусто = навсегда)</label>
+      <input id="muteDuration" value="60" />
+      <div class="row">
+        <button class="btn" onclick="closeMuteModal()">Отмена</button>
+        <button class="btn danger" id="btnMuteConfirm">Замутить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="checkModal" class="modal hidden">
+    <div class="check-card">
+      <div class="check-header" id="checkHeader"></div>
+      <div class="check-events" id="checkEvents"></div>
+      <div class="check-input-row">
+        <input id="checkInput" placeholder="Написать игроку…" autocomplete="off" />
+        <button class="btn primary" id="btnCheckSend">Отправить</button>
+      </div>
+      <div class="check-actions">
+        <button class="btn" id="btnCheckShow">Показать табличку</button>
+        <button class="btn ok" id="btnCheckClean">Вердикт: чист</button>
+        <button class="btn danger" id="btnCheckBan">Вердикт: бан</button>
+        <button class="btn" id="btnCheckClose">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
