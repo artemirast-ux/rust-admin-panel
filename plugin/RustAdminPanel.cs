@@ -817,6 +817,8 @@ namespace Oxide.Plugins
             {
                 webrequest.Enqueue(Url(path), null, (code, response) =>
                 {
+                    // The callback may arrive after the plugin was unloaded, so even
+                    // the error logging has to be defensive.
                     try
                     {
                         if (!Ok(code) || string.IsNullOrEmpty(response))
@@ -826,10 +828,10 @@ namespace Oxide.Plugins
                         }
                         callback?.Invoke(code, response);
                     }
-                    catch (Exception ex) { PrintError($"Get callback failed ({path}): {ex.Message}"); }
+                    catch (Exception ex) { try { PrintError($"Get callback failed ({path}): {ex.Message}"); } catch { } }
                 }, this, RequestMethod.GET, AuthHeaders(), timeout);
             }
-            catch (Exception ex) { PrintError($"Get failed ({path}): {ex.Message}"); }
+            catch (Exception ex) { try { PrintError($"Get failed ({path}): {ex.Message}"); } catch { } }
         }
 
         private void Post(string path, string body, Action<int, string> callback = null, bool upsert = false)
@@ -841,10 +843,10 @@ namespace Oxide.Plugins
                 webrequest.Enqueue(Url(path), body, (code, response) =>
                 {
                     try { callback?.Invoke(code, response); }
-                    catch (Exception ex) { PrintError($"Post callback failed ({path}): {ex.Message}"); }
+                    catch (Exception ex) { try { PrintError($"Post callback failed ({path}): {ex.Message}"); } catch { } }
                 }, this, RequestMethod.POST, headers, 10f);
             }
-            catch (Exception ex) { PrintError($"Post failed ({path}): {ex.Message}"); }
+            catch (Exception ex) { try { PrintError($"Post failed ({path}): {ex.Message}"); } catch { } }
         }
 
         private void Patch(string path, string body, Action<int, string> callback = null)
@@ -856,10 +858,10 @@ namespace Oxide.Plugins
                 webrequest.Enqueue(Url(path), body, (code, response) =>
                 {
                     try { callback?.Invoke(code, response); }
-                    catch (Exception ex) { PrintError($"Patch callback failed ({path}): {ex.Message}"); }
+                    catch (Exception ex) { try { PrintError($"Patch callback failed ({path}): {ex.Message}"); } catch { } }
                 }, this, RequestMethod.PATCH, headers, 10f);
             }
-            catch (Exception ex) { PrintError($"Patch failed ({path}): {ex.Message}"); }
+            catch (Exception ex) { try { PrintError($"Patch failed ({path}): {ex.Message}"); } catch { } }
         }
 
         private static string GetStr(JObject o, string key)
@@ -1028,14 +1030,43 @@ namespace Oxide.Plugins
             {
                 return;
             }
+
+            // Sent while the plugin is being torn down (unload / server shutdown).
+            // Oxide webrequest delivers its callback into a plugin instance that no
+            // longer exists and throws NullReferenceException from inside its own
+            // dispatcher, so post this one request from a background thread instead.
             try
             {
-                var body = new JObject
+                string url = Url("/rest/v1/players?online=eq.true");
+                string body = new JObject
                 {
                     ["online"] = false,
                     ["last_seen"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
-                };
-                Patch("/rest/v1/players?online=eq.true", body.ToString());
+                }.ToString();
+                string apiKey = config.ServiceKey;
+
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    try
+                    {
+                        var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url);
+                        req.Method = "PATCH";
+                        req.ContentType = "application/json";
+                        req.Timeout = 8000;
+                        req.ReadWriteTimeout = 8000;
+                        req.Headers.Add("apikey", apiKey);
+                        req.Headers.Add("Authorization", "Bearer " + apiKey);
+                        req.Headers.Add("Prefer", "return=minimal");
+                        var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+                        req.ContentLength = bytes.Length;
+                        using (var s = req.GetRequestStream())
+                        {
+                            s.Write(bytes, 0, bytes.Length);
+                        }
+                        try { req.GetResponse()?.Close(); } catch { }
+                    }
+                    catch { /* best effort during shutdown */ }
+                });
             }
             catch (Exception ex)
             {
