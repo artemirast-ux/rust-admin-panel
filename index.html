@@ -97,10 +97,22 @@
       </header>
 
       <section id="view-dashboard" class="view active">
+        <div class="page-head">
+          <span class="page-eyebrow">Командный центр</span>
+          <h3 class="page-title">Оперативный обзор</h3>
+          <p class="page-subtitle">Тактический мониторинг Rust-сети в реальном времени.</p>
+          <span id="linkedServers" class="tag ok">сервер подключён</span>
+        </div>
         <div class="cards" id="statCards"></div>
-        <div class="panel">
-          <h3>Онлайн за последние 24 часа</h3>
-          <div id="onlineChart" class="online-chart"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <h3>Лента событий</h3>
+            <div id="liveFeed"></div>
+          </div>
+          <div class="panel">
+            <h3>Онлайн за последние 24 часа</h3>
+            <div id="onlineChart" class="online-chart"></div>
+          </div>
         </div>
         <div class="grid-2">
           <div class="panel">
@@ -108,7 +120,7 @@
             <div id="recentReports"></div>
           </div>
           <div class="panel">
-            <h3>Последние события</h3>
+            <h3>Последние подключения</h3>
             <div id="recentConnections"></div>
           </div>
         </div>
@@ -116,17 +128,20 @@
 
       <section id="view-players" class="view">
         <div class="panel">
-          <h3>Игроки на сервере</h3>
-          <input id="playersSearch" class="search-input" placeholder="Поиск по нику…" autocomplete="off" />
+          <div class="page-head">
+            <h3 class="page-title">Игроки</h3>
+            <p class="page-subtitle">Поиск профилей по нику, SteamID64, IP и тегам.</p>
+            <button class="btn primary" id="btnFlagPlayer">Пометить игрока</button>
+          </div>
+          <input id="playersSearch" class="search-input" placeholder="Поиск по нику, SteamID64, IP…" autocomplete="off" />
           <table class="table">
             <thead>
               <tr>
                 <th>Игрок</th>
-                <th>Тип</th>
-                <th>IP адрес</th>
-                <th>Страна</th>
-                <th>Провайдер</th>
-                <th>Пинг</th>
+                <th>SteamID64</th>
+                <th>Риск</th>
+                <th>Наиграно</th>
+                <th>Статус</th>
                 <th></th>
               </tr>
             </thead>
@@ -137,11 +152,15 @@
 
       <section id="view-reports" class="view">
         <div class="panel">
-          <h3>Жалобы на игроков</h3>
+          <div class="page-head">
+            <h3 class="page-title">Репорты</h3>
+            <p class="page-subtitle">Проверка, назначение и закрытие репортов игроков.</p>
+            <button class="btn primary" id="btnCreateReport">Создать репорт</button>
+          </div>
           <p class="muted small" style="margin-bottom:12px">Нажмите «Проверка», чтобы вызвать игрока на проверку и следить за ним в реальном времени. Правый клик по строке — быстрое меню.</p>
           <table class="table">
             <thead>
-              <tr><th>Жалоба на</th><th>Причина</th><th>От кого</th><th>Источник</th><th>Время</th><th>Статус</th><th>Действия</th></tr>
+              <tr><th>Репорт</th><th>Цель</th><th>Причина</th><th>Статус</th><th>Обновлён</th><th></th></tr>
             </thead>
             <tbody id="reportsBody"></tbody>
           </table>
@@ -150,11 +169,14 @@
 
       <section id="view-checks" class="view">
         <div class="panel">
-          <h3>Проверки игроков</h3>
-          <p class="muted small" style="margin-bottom:12px">Проверка — это слежение за игроком в реальном времени: вы видите, что он пишет в чат и кого убивает, можете написать ему лично, показать ему табличку в игре и вынести вердикт. Начать проверку можно из жалобы (кнопка «Проверка») или из списка игроков онлайн.</p>
+          <div class="page-head">
+            <h3 class="page-title">Проверки игроков</h3>
+            <p class="page-subtitle">Начинай, отслеживай и закрывай проверки игроков из веб-панели.</p>
+            <button class="btn primary" id="btnStartCheck">Начать проверку</button>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Игрок</th><th>SteamID</th><th>Админ</th><th>Статус</th><th>Табличка</th><th>Начата</th><th>Закрыта</th><th>Действия</th></tr>
+              <tr><th>Игрок</th><th>SteamID64</th><th>Статус</th><th>Причина</th><th>Обновлён</th><th></th></tr>
             </thead>
             <tbody id="checksBody"></tbody>
           </table>
@@ -163,10 +185,14 @@
 
       <section id="view-bans" class="view">
         <div class="panel">
-          <h3>Список банов</h3>
+          <div class="page-head">
+            <h3 class="page-title">Баны</h3>
+            <p class="page-subtitle">Записи глобальных и серверных банов.</p>
+            <button class="btn primary" id="btnAddBan">Добавить бан</button>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Ник</th><th>SteamID</th><th>IP</th><th>HWID</th><th>Причина</th><th>Админ</th><th>Истекает</th><th>Действия</th></tr>
+              <tr><th>Игрок</th><th>Область</th><th>Причина</th><th>Статус</th><th>Истекает</th><th></th></tr>
             </thead>
             <tbody id="bansBody"></tbody>
           </table>
@@ -175,10 +201,14 @@
 
       <section id="view-mutes" class="view">
         <div class="panel">
-          <h3>Список мутов</h3>
+          <div class="page-head">
+            <h3 class="page-title">Муты</h3>
+            <p class="page-subtitle">История мутов, активные ограничения и снятие мутов.</p>
+            <button class="btn primary" id="btnAddMute">Добавить мут</button>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Ник</th><th>SteamID</th><th>Причина</th><th>Админ</th><th>Истекает</th><th>Действия</th></tr>
+              <tr><th>Игрок</th><th>Область</th><th>Причина</th><th>Статус</th><th>Истекает</th><th></th></tr>
             </thead>
             <tbody id="mutesBody"></tbody>
           </table>
@@ -186,6 +216,11 @@
       </section>
 
       <section id="view-chat" class="view">
+        <div class="page-head">
+          <h3 class="page-title">Контроль чата</h3>
+          <p class="page-subtitle">Поиск по логам глобального чата и модерация из контекстного меню.</p>
+          <button class="btn primary" id="btnExportChat">Экспорт логов</button>
+        </div>
         <div class="panel chat-panel">
           <div class="chat-sidebar">
             <input id="chatSearch" class="search-input" placeholder="Поиск игрока…" autocomplete="off" />
@@ -218,6 +253,10 @@
       </section>
 
       <section id="view-history" class="view">
+        <div class="page-head">
+          <h3 class="page-title">История</h3>
+          <p class="page-subtitle">Убийства, подключения и действия администраторов.</p>
+        </div>
         <div class="panel">
           <h3>История событий</h3>
           <div class="tabs">
@@ -254,15 +293,20 @@
 
       <section id="view-killanalysis" class="view">
         <div class="panel">
-          <h3>Анализ убийств — подозрительная активность</h3>
-          <p class="muted small" style="margin-bottom:12px">Панель сама ищет читеров по последним убийствам: серии убийств за короткое время, выстрелы только в голову, убийства с неестественно больших дистанций. Нажмите на игрока, чтобы посмотреть детали и скопировать его статистику.</p>
+          <div class="page-head">
+            <h3 class="page-title">Подозрения</h3>
+            <p class="page-subtitle">Автопоиск читеров: серии убийств, выстрелы только в голову, убийства с неестественных дистанций.</p>
+          </div>
           <div id="suspiciousList"></div>
         </div>
       </section>
 
       <section id="view-ipchecks" class="view">
         <div class="panel">
-          <h3>Проверка IP на VPN / прокси</h3>
+          <div class="page-head">
+            <h3 class="page-title">IP и VPN</h3>
+            <p class="page-subtitle">Проверка IP-адресов на VPN и прокси, история проверок.</p>
+          </div>
           <div class="check-form">
             <input id="ipInput" placeholder="IP-адрес, например 1.2.3.4" />
             <button class="btn primary" id="btnCheckIp">Проверить</button>
@@ -279,8 +323,10 @@
 
       <section id="view-map" class="view">
         <div class="panel">
-          <h3>Карта сервера</h3>
-          <p class="muted small" style="margin-bottom:12px">Позиции игроков онлайн (обновляются каждые 15 секунд). Кликните по точке, чтобы открыть профиль игрока.</p>
+          <div class="page-head">
+            <h3 class="page-title">Карта</h3>
+            <p class="page-subtitle">Позиции игроков онлайн (обновление каждые 15 секунд). Клик по точке — профиль игрока.</p>
+          </div>
           <div id="mapCanvas" class="map-canvas"></div>
           <div id="mapLegend" class="map-legend muted small"></div>
         </div>
@@ -288,7 +334,10 @@
 
       <section id="view-sleepers" class="view">
         <div class="panel">
-          <h3>Спящие игроки (спальники)</h3>
+          <div class="page-head">
+            <h3 class="page-title">Спальники</h3>
+            <p class="page-subtitle">Спящие тела игроков, оставшиеся на карте.</p>
+          </div>
           <table class="table">
             <thead>
               <tr><th>Ник</th><th>SteamID</th><th>Координаты</th><th>Видели в последний раз</th><th>Действия</th></tr>
@@ -300,13 +349,24 @@
 
       <section id="view-alerts" class="view">
         <div class="panel">
-          <h3>Алерты</h3>
-          <p class="muted small" style="margin-bottom:12px">События сервера: обнаруженные VPN, новые жалобы, баны и начатые проверки.</p>
-          <div id="alertsList"></div>
+          <div class="page-head">
+            <h3 class="page-title">Алерты</h3>
+            <p class="page-subtitle">Подозрительные входы, повторные нарушители и кастомные алерты плагина.</p>
+          </div>
+          <table class="table">
+            <thead>
+              <tr><th>Сигнал</th><th>Игрок</th><th>Правило</th><th>Важность</th><th>Время</th></tr>
+            </thead>
+            <tbody id="alertsBody"></tbody>
+          </table>
         </div>
       </section>
 
       <section id="view-stats" class="view">
+        <div class="page-head">
+          <h3 class="page-title">Статистика</h3>
+          <p class="page-subtitle">Сводка по игрокам, убийствам и серверу.</p>
+        </div>
         <div class="cards" id="statsCards"></div>
         <div class="grid-2">
           <div class="panel">
@@ -322,11 +382,14 @@
 
       <section id="view-audit" class="view">
         <div class="panel">
-          <h3>Лог активности</h3>
-          <p class="muted small" style="margin-bottom:12px">Все действия администраторов: кто, когда и какую команду отправил.</p>
+          <div class="page-head">
+            <h3 class="page-title">Журнал аудита</h3>
+            <p class="page-subtitle">Неизменяемая история действий персонала и событий плагина.</p>
+            <button class="btn primary" id="btnExportAudit">Экспорт аудита</button>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Команда</th><th>Цель</th><th>Причина</th><th>Админ</th><th>Статус</th><th>Результат</th><th>Время</th></tr>
+              <tr><th>Исполнитель</th><th>Действие</th><th>Цель</th><th>Результат</th><th>Время</th></tr>
             </thead>
             <tbody id="auditBody"></tbody>
           </table>
@@ -335,11 +398,14 @@
 
       <section id="view-staff" class="view">
         <div class="panel">
-          <h3>Команда</h3>
-          <p class="muted small" style="margin-bottom:12px">Сотрудники, у которых есть доступ к панели. Управлять списком можно в Supabase: таблица <span class="mono">admins</span>.</p>
+          <div class="page-head">
+            <h3 class="page-title">Персонал</h3>
+            <p class="page-subtitle">Участники, роли, приглашения и гранулярные права.</p>
+            <button class="btn primary" id="btnInviteStaff">Пригласить персонал</button>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Email</th><th>Роль</th><th>Добавлен</th></tr>
+              <tr><th>Участник</th><th>Роль</th><th>Права</th><th>Статус</th><th>Добавлен</th></tr>
             </thead>
             <tbody id="staffBody"></tbody>
           </table>
@@ -348,8 +414,11 @@
 
       <section id="view-servers" class="view">
         <div class="panel">
-          <h3>Серверы</h3>
-          <p class="muted small" style="margin-bottom:12px">Подключённые к панели сервера и их состояние в реальном времени.</p>
+          <div class="page-head">
+            <h3 class="page-title">Серверы</h3>
+            <p class="page-subtitle">Подключённые Rust-сервера, здоровье, привязка и токены.</p>
+            <button class="btn primary" id="btnConnectServer">Подключить сервер</button>
+          </div>
           <div id="serversList"></div>
         </div>
       </section>

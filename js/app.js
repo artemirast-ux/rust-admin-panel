@@ -91,6 +91,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btnPmSend").addEventListener("click", sendPm);
 
+  const ec = document.getElementById("btnExportChat");
+  if (ec) {
+    ec.addEventListener("click", exportChatLogs);
+  }
+
+  const bind = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", fn);
+  };
+  bind("btnFlagPlayer", () => switchView("players"));
+  bind("btnCreateReport", () => alert("Репорты создаются игроками в игре (команда /report или клавиша F7). Здесь они появляются автоматически."));
+  bind("btnStartCheck", () => switchView("players"));
+  bind("btnAddBan", () => switchView("players"));
+  bind("btnAddMute", () => switchView("players"));
+  bind("btnConnectServer", () => alert("Установите плагин RustAdminPanel.cs на сервер и пропишите URL проекта и секретный ключ в oxide/config/RustAdminPanel.json — сервер появится здесь автоматически."));
+  bind("btnInviteStaff", () => alert("Добавьте сотрудника в Supabase: Authentication → Users → Add user, затем вставьте его email в таблицу admins (role: owner/admin/moderator/support)."));
+  bind("btnExportAudit", exportAudit);
+
   bindSettings();
   document.getElementById("pmText").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendPm();
@@ -264,6 +282,22 @@ async function loadDashboard() {  // NOTE: with head:true the count comes back N
 
   loadOnlineChart();
 
+  // Live feed: latest alerts (VPN, reports, bans, checks).
+  const { data: feed } = await sb
+    .from("alerts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  document.getElementById("liveFeed").innerHTML = feed?.length
+    ? feed
+        .map((a) => {
+          const m = ALERT_META[a.kind] || { icon: "ℹ", cls: "muted" };
+          return `<div class="chat-line"><span class="who">${m.icon} ${esc(a.kind)}</span>${esc(a.text)}<span class="time">${fmtTime(a.created_at)}</span></div>`;
+        })
+        .join("")
+    : '<div class="empty">Событий пока нет</div>';
+
   const { data: recentReports } = await sb
     .from("reports")
     .select("*")
@@ -302,7 +336,7 @@ let playersQuery = "";
 
 async function loadPlayers() {
   const [{ data, error }, { data: all }] = await Promise.all([
-    sb.from("players").select("*").eq("online", true).order("last_seen", { ascending: false }),
+    sb.from("players").select("*").order("last_seen", { ascending: false }).limit(200),
     sb.from("players").select("steamid,name,ip,hwid,online,last_seen"),
   ]);
   allPlayers = all || [];
@@ -348,35 +382,29 @@ async function loadPlayers() {
   el.innerHTML = list
     .map((p) => {
       const dups = dupCount(p);
-      const ping = p.ping ?? 0;
-      const pingCls = ping === 0 ? "muted" : ping < 80 ? "ok" : ping < 160 ? "warn" : "danger";
-      const country = p.country_code
-        ? `${countryFlag(p.country_code)} ${esc(p.country || p.country_code.toUpperCase())}`
-        : "—";
-      const typeTag =
-        p.is_pirate === true
-          ? '<span class="tag danger">Пират</span>'
-          : p.is_pirate === false
-          ? '<span class="tag ok">Лицензия</span>'
-          : '<span class="tag muted">Неизвестно</span>';
+      const risks = [];
+      if (p.is_vpn) risks.push('<span class="tag vpn">VPN</span>');
+      if (p.is_pirate === true) risks.push('<span class="tag danger">Пират</span>');
+      if ((p.vac_bans ?? 0) >= 1) risks.push('<span class="tag danger">VAC</span>');
+      if (p.rust_hours_total && p.rust_hours_total < 100) risks.push('<span class="tag warn">Мало часов</span>');
+      if (dups) risks.push(`<button class="tag dup" title="Другие аккаунты с таким же IP или компьютером" onclick="event.stopPropagation();showDuplicates('${p.steamid}')">${dups + 1} акк.</button>`);
+      const playtime = p.rust_hours_total != null ? p.rust_hours_total + " ч" : "—";
+      const status = p.online
+        ? '<span class="tag ok">Онлайн</span>'
+        : '<span class="tag muted">Оффлайн</span>';
 
       return `
       <tr style="cursor:pointer" data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}">
         <td>
           <span class="avatar small" style="background:${avatarColor(p.name)}">${initials(p.name)}</span>
           <b>${esc(p.name) || "—"}</b>
-          ${p.is_vpn ? '<span class="tag vpn">VPN</span>' : p.vpn_checked ? '<span class="tag ok">без VPN</span>' : ""}
-          ${dups ? `<button class="tag dup" title="Другие аккаунты с таким же IP или компьютером" onclick="event.stopPropagation();showDuplicates('${p.steamid}')">${dups + 1} акк.</button>` : ""}
-          <div class="mono muted">${esc(p.steamid)}</div>
         </td>
-        <td>${typeTag}</td>
-        <td class="mono small">${esc(p.ip) || "—"}</td>
-        <td>${country}</td>
-        <td class="small">${esc(p.isp) || "—"}</td>
-        <td><span class="ping-tag ${pingCls}">${ping} мс</span></td>
+        <td class="mono small">${esc(p.steamid)}</td>
+        <td>${risks.length ? risks.join(" ") : '<span class="tag ok">Clean</span>'}</td>
+        <td>${playtime}</td>
+        <td>${status}</td>
         <td class="row-actions">
           <button class="btn small warn" onclick="event.stopPropagation();startCheck('${esc(p.steamid)}','${esc(p.name)}')">Проверка</button>
-          <button class="btn small" onclick="event.stopPropagation();openMuteModal('${esc(p.steamid)}','${esc(p.name)}')">Мут</button>
           <button class="btn small danger" onclick="event.stopPropagation();openBanModal('${esc(p.steamid)}','${esc(p.name)}')">Бан</button>
         </td>
       </tr>`;
@@ -423,6 +451,28 @@ async function ignoreReports(steamid, name) {
   el.textContent = mins ? `Жалобы на «${name}» игнорируются ${n} дн.` : `Жалобы на «${name}» игнорируются навсегда`;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2200);
+}
+
+// Downloads the global chat log as a plain-text file (the "Export logs" button).
+async function exportChatLogs() {
+  const { data, error } = await sb
+    .from("chat_logs")
+    .select("created_at,name,message")
+    .order("created_at", { ascending: false })
+    .limit(5000);
+
+  if (error || !data) {
+    alert("Не удалось выгрузить лог чата: " + (error?.message || ""));
+    return;
+  }
+
+  const lines = data.map((m) => `[${fmtTime(m.created_at)}] ${m.name}: ${m.message}`);
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `chat-log-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 // Shows players that share an IP or HWID with the given player (multi-account check)
@@ -619,13 +669,12 @@ async function loadReports() {
     .map(
       (r) => `
       <tr data-sid="${esc(r.target_steamid || "")}" data-name="${esc(r.target_name || "")}">
+        <td class="mono">#${r.id}</td>
         <td><b>${esc(r.target_name) || r.target_steamid}</b><br><span class="mono muted">${esc(r.target_steamid)}</span></td>
         <td>${esc(r.reason)}</td>
-        <td>${esc(r.reporter_name) || "—"}</td>
-        <td><span class="tag ${r.source === "f7" ? "warn" : "muted"}">${r.source}</span></td>
-        <td>${fmtTime(r.created_at)}</td>
         <td><span class="tag ${r.status === "pending" ? "warn" : r.status === "banned" ? "danger" : "ok"}">${r.status}</span></td>
-        <td style="white-space:nowrap">
+        <td>${fmtTime(r.created_at)}</td>
+        <td style="white-space:nowrap" class="row-actions">
           <button class="btn small warn" title="Открыть чат проверки" onclick="startCheck('${esc(r.target_steamid)}', '${esc(r.target_name)}')">Проверка</button>
           <button class="btn small" title="Последние сообщения игрока" onclick="showPlayerMessages('${esc(r.target_steamid)}', '${esc(r.target_name)}')">Сообщения</button>
           <button class="btn small danger" onclick="openBanModal('${esc(r.target_steamid)}', '${esc(r.target_name)}')">Забанить</button>
@@ -744,11 +793,9 @@ async function loadChecks() {
       <tr>
         <td><b>${esc(c.name) || c.steamid}</b></td>
         <td class="mono">${esc(c.steamid)}</td>
-        <td>${esc(c.admin)}</td>
-        <td><span class="tag ${c.status === "active" ? "warn" : c.status === "banned" ? "danger" : "ok"}">${c.status === "active" ? "идёт" : c.status === "banned" ? "бан" : "чист"}</span></td>
-        <td>${c.shown ? '<span class="tag ok">показана</span>' : '<span class="tag muted">нет</span>'}</td>
-        <td>${fmtTime(c.created_at)}</td>
-        <td>${c.closed_at ? fmtTime(c.closed_at) : "—"}</td>
+        <td><span class="tag ${c.status === "active" ? "warn" : c.status === "banned" ? "danger" : "ok"}">${c.status === "active" ? "идётся" : c.status === "banned" ? "нарушение" : "чист"}</span></td>
+        <td>${c.shown ? "Табличка показана" : esc(c.reason || "Проверка по жалобе")}</td>
+        <td>${fmtTime(c.closed_at || c.created_at)}</td>
         <td style="white-space:nowrap">
           ${c.status === "active" ? `<button class="btn small primary" onclick="reopenCheck(${c.id})">Открыть чат</button>` : `<button class="btn small" onclick="reopenCheck(${c.id})">История</button>`}
         </td>
@@ -973,14 +1020,12 @@ async function loadBans() {
         : '<span class="tag danger">навсегда</span>';
       return `
       <tr>
-        <td><b>${esc(b.name) || "—"}</b></td>
-        <td class="mono">${esc(b.steamid) || "—"}</td>
-        <td class="mono">${esc(b.ip) || "—"}</td>
-        <td class="mono">${shortHwid(b.hwid)}</td>
+        <td><b>${esc(b.name) || "—"}</b><br><span class="mono muted">${esc(b.steamid) || "—"}</span></td>
+        <td>${b.hwid ? "SteamID + HWID" : "SteamID + IP"}</td>
         <td>${esc(b.reason)}</td>
-        <td>${esc(b.admin)}</td>
-        <td>${b.expires_at ? fmtTime(b.expires_at) : "—"}</td>
-        <td style="white-space:nowrap">${statusTag} ${b.active ? `<button class="btn small" onclick="quickAction('unban','${esc(b.steamid)}','${esc(b.name)}')">Разбанить</button>` : ""}</td>
+        <td>${statusTag}</td>
+        <td>${b.expires_at ? fmtTime(b.expires_at) : "Перманент"}</td>
+        <td style="white-space:nowrap">${b.active ? `<button class="btn small" onclick="quickAction('unban','${esc(b.steamid)}','${esc(b.name)}')">Разбанить</button>` : ""}</td>
       </tr>`;
     })
     .join("");
@@ -1009,12 +1054,12 @@ async function loadMutes() {
     .map(
       (m) => `
       <tr>
-        <td><b>${esc(m.name) || "—"}</b></td>
-        <td class="mono">${esc(m.steamid)}</td>
+        <td><b>${esc(m.name) || "—"}</b><br><span class="mono muted">${esc(m.steamid)}</span></td>
+        <td>Глобальный чат</td>
         <td>${esc(m.reason)}</td>
-        <td>${esc(m.admin)}</td>
-        <td>${m.expires_at ? fmtTime(m.expires_at) : "—"}</td>
-        <td>${m.active ? `<button class="btn small" onclick="quickAction('unmute','${esc(m.steamid)}','${esc(m.name)}')">Снять мут</button>` : '<span class="tag muted">снят</span>'}</td>
+        <td>${m.active ? '<span class="tag warn">активен</span>' : '<span class="tag muted">снят</span>'}</td>
+        <td>${m.expires_at ? fmtTime(m.expires_at) : "Перманент"}</td>
+        <td>${m.active ? `<button class="btn small" onclick="quickAction('unmute','${esc(m.steamid)}','${esc(m.name)}')">Снять мут</button>` : ""}</td>
       </tr>`
     )
     .join("");
@@ -2037,10 +2082,10 @@ function bindSettings() {
 /* ---------- Alerts ---------- */
 
 const ALERT_META = {
-  vpn: { icon: "🛡", label: "VPN" },
-  report: { icon: "🚩", label: "Репорт" },
-  ban: { icon: "🔨", label: "Бан" },
-  check: { icon: "🔍", label: "Проверка" },
+  vpn: { icon: "🛡", label: "VPN-провайдер", rule: "Блокировка провайдеров", sev: "High", cls: "vpn" },
+  report: { icon: "🚩", label: "Репорт", rule: "Жалобы игроков", sev: "Medium", cls: "warn" },
+  ban: { icon: "🔨", label: "Бан", rule: "Действие администратора", sev: "Info", cls: "danger" },
+  check: { icon: "🔍", label: "Проверка", rule: "Подозрительная активность", sev: "Medium", cls: "warn" },
 };
 
 async function loadAlerts() {
@@ -2050,28 +2095,33 @@ async function loadAlerts() {
     .order("created_at", { ascending: false })
     .limit(100);
 
-  const el = document.getElementById("alertsList");
+  const body = document.getElementById("alertsBody");
   if (error || !data) {
-    el.innerHTML = '<div class="empty">Ошибка загрузки</div>';
+    body.innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
     return;
   }
   if (!data.length) {
-    el.innerHTML = '<div class="empty">Оповещений пока нет</div>';
+    body.innerHTML = '<tr><td colspan="5" class="empty">Алертов пока нет</td></tr>';
     return;
   }
 
-  el.innerHTML = data
+  body.innerHTML = data
     .map((a) => {
-      const m = ALERT_META[a.kind] || { icon: "ℹ", label: a.kind || "Событие" };
+      const m = ALERT_META[a.kind] || { icon: "ℹ", label: a.kind || "Событие", rule: "—", sev: "Info", cls: "muted" };
+      // alerts.text is a free-form line like "VPN/proxy: PlayerName (1.2.3.4)";
+      // the player name is what follows the first colon, before the paren.
+      const cut = (a.text || "").indexOf(":");
+      const rest = cut >= 0 ? (a.text || "").slice(cut + 1).trim() : (a.text || "");
+      const paren = rest.indexOf("(");
+      const playerName = paren > 0 ? rest.slice(0, paren).trim() : rest;
       return `
-      <div class="alert-item ${esc(a.kind)}">
-        <div class="alert-ico">${m.icon}</div>
-        <div class="alert-text">
-          <span class="alert-kind">${m.label}</span><br />
-          ${esc(a.text)}
-        </div>
-        <span class="muted small" style="white-space:nowrap">${fmtTime(a.created_at)}</span>
-      </div>`;
+      <tr class="alert-row ${esc(a.kind)}">
+        <td><span class="alert-ico">${m.icon}</span> ${m.label}</td>
+        <td><b>${esc(playerName)}</b></td>
+        <td class="small muted">${esc(m.rule)}</td>
+        <td><span class="tag ${m.cls}">${m.sev}</span></td>
+        <td>${fmtTime(a.created_at)}</td>
+      </tr>`;
     })
     .join("");
 }
@@ -2160,11 +2210,11 @@ async function loadAudit() {
 
   const body = document.getElementById("auditBody");
   if (error || !data) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">Ошибка загрузки</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
     return;
   }
   if (!data.length) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">Действий пока не было</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="empty">Действий пока не было</td></tr>';
     return;
   }
 
@@ -2172,12 +2222,10 @@ async function loadAudit() {
     .map(
       (c) => `
       <tr>
-        <td><span class="tag ${c.command === "ban" ? "danger" : c.command === "kick" ? "warn" : "muted"}">${c.command}</span></td>
-        <td>${esc(c.name) || esc(c.steamid) || "—"}</td>
-        <td>${esc(c.reason || c.message || "")}</td>
-        <td>${esc(c.admin)}</td>
-        <td><span class="tag ${c.status === "done" ? "ok" : c.status === "failed" ? "danger" : "warn"}">${c.status}</span></td>
-        <td class="muted">${esc(c.result || "")}</td>
+        <td>${esc(c.admin) || "—"}</td>
+        <td><span class="tag ${c.command === "ban" ? "danger" : c.command === "kick" ? "warn" : "muted"}">${esc(c.command)}</span></td>
+        <td><b>${esc(c.name) || esc(c.steamid) || "—"}</b></td>
+        <td><span class="tag ${c.status === "done" ? "ok" : c.status === "failed" ? "danger" : "warn"}">${esc(c.status)}</span></td>
         <td>${fmtTime(c.created_at)}</td>
       </tr>`
     )
@@ -2191,20 +2239,29 @@ async function loadStaff() {
 
   const body = document.getElementById("staffBody");
   if (error || !data) {
-    body.innerHTML = '<tr><td colspan="3" class="empty">Ошибка загрузки</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
     return;
   }
   if (!data.length) {
-    body.innerHTML = '<tr><td colspan="3" class="empty">Сотрудников нет</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="empty">Сотрудников нет</td></tr>';
     return;
   }
+
+  const PERMS = {
+    owner: "Все права",
+    admin: "Репорты, баны, чат, проверки",
+    moderator: "Репорты, чат, проверки",
+    support: "Репорты, заметки",
+  };
 
   body.innerHTML = data
     .map(
       (a) => `
       <tr>
-        <td>${esc(a.email)}</td>
+        <td><b>${esc(a.email)}</b></td>
         <td><span class="tag ${a.role === "owner" ? "warn" : "muted"}">${esc(a.role)}</span></td>
+        <td class="small">${PERMS[a.role] || "Репорты"}</td>
+        <td><span class="tag ok">Активен</span></td>
         <td>${fmtDate(a.created_at)}</td>
       </tr>`
     )
@@ -2233,6 +2290,30 @@ async function sendCommand(payload) {
     return false;
   }
   return true;
+}
+
+// Downloads the audit log (dispatched commands) as a plain-text file.
+async function exportAudit() {
+  const { data, error } = await sb
+    .from("commands")
+    .select("created_at,admin,command,name,steamid,status,result")
+    .order("created_at", { ascending: false })
+    .limit(5000);
+
+  if (error || !data) {
+    alert("Не удалось выгрузить аудит: " + (error?.message || ""));
+    return;
+  }
+
+  const lines = data.map(
+    (c) => `[${fmtTime(c.created_at)}] ${c.admin || "-"} | ${c.command} | ${c.name || c.steamid || "-"} | ${c.status}`
+  );
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `audit-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 async function quickAction(action, steamid, name) {
