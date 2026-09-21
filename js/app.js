@@ -147,6 +147,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  bindAnticheatSettings();
+  const acSave = document.getElementById("btnAcSave");
+  if (acSave) acSave.addEventListener("click", saveAnticheatSettings);
+  const acReset = document.getElementById("btnAcReset");
+  if (acReset) {
+    acReset.addEventListener("click", () => {
+      saveSettings({ anticheat: JSON.parse(JSON.stringify(AC_DEFAULTS)) });
+      bindAnticheatSettings();
+      loadAnticheat();
+    });
+  }
+
   bindSettings();
   document.getElementById("pmText").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendPm();
@@ -692,12 +704,12 @@ async function openPlayerCard(steamid) {
   const provider = esc(p.isp) || "—";
   const firstSeen = p.first_seen ? fmtDate(p.first_seen) : "—";
   const accountType =
-    p.is_pirate === true ? "Пират" : p.is_pirate === false ? "Лицензия" : "Неизвестно";
+    p.is_pirate === true ? "Пират" : p.is_pirate === false ? "Лицензия" : "Не удалось определить";
   const steamBlock = p.steam_checked_at
     ? `
     <h4>Steam</h4>
     <div class="pgrid">
-      <div class="prow"><span class="pkey">Тип аккаунта</span><span>${accountType}</span></div>
+      <div class="prow"><span class="pkey">Тип аккаунта</span><span>${accountType}${p.is_pirate == null ? ' <span class="muted small">(Steam не отдал часы в Rust/Spacewar — часто бывает при family sharing или скрытых деталях игр)</span>' : ""}</span></div>
       <div class="prow"><span class="pkey">Аккаунт создан</span><span>${p.steam_created ? fmtDate(p.steam_created) : '<span class="muted">скрыт</span>'}</span></div>
       <div class="prow"><span class="pkey">Часы в Rust</span><span>${p.rust_hours_total != null ? p.rust_hours_total + " ч" : "—"}</span></div>
       <div class="prow"><span class="pkey">Часы в Spacewar</span><span>${p.spacewar_hours_total != null ? p.spacewar_hours_total + " ч" : "—"}</span></div>
@@ -757,6 +769,7 @@ async function openPlayerCard(steamid) {
     <div class="check-actions">
       <button class="btn" onclick="closeModal()">Закрыть</button>
       <button class="btn" onclick="copyText('${esc(p.steamid)}','SteamID скопирован')">SteamID</button>
+      <button class="btn" onclick="closeModal();recheckSteam('${esc(p.steamid)}','${esc(p.name)}')">Перепроверить Steam</button>
       ${p.ip ? `<button class="btn" onclick="closeModal();document.getElementById('ipInput').value='${esc(p.ip)}';checkIp('${esc(p.ip)}')">Проверить IP</button>` : ""}
       <button class="btn" onclick="closeModal();openPmModal('${esc(p.steamid)}','${esc(p.name)}')">Написать в ЛС</button>
       <button class="btn warn" onclick="closeModal();startCheck('${esc(p.steamid)}','${esc(p.name)}')">Проверка</button>
@@ -764,6 +777,20 @@ async function openPlayerCard(steamid) {
     </div>
   `;
   document.getElementById("modal").classList.remove("hidden");
+}
+
+// Asks the plugin to re-query the Steam Web API for this player right now
+// (bypassing the 24h re-check interval). Used when the profile could not tell
+// a license from a pirate.
+async function recheckSteam(steamid, name) {
+  if (!steamid) return;
+  const ok = await sendCommand({ command: "steamcheck", steamid, name });
+  if (!ok) return;
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = "Запросил Steam повторно — обнови профиль через минуту";
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
 }
 
 // Copies text to the clipboard (fallback for older browsers).
@@ -1452,6 +1479,204 @@ SORT_GETTERS.anticheat = {
 };
 SORT_RENDER.anticheat = renderAnticheat;
 
+/* ---------- Anticheat autoban settings ---------- */
+
+// Conservative defaults: it is far better to miss a cheater than to ban a
+// legitimate player, so every threshold starts on the strict side.
+const AC_DEFAULTS = {
+  enabled: false,
+  action: "alert",                       // alert | check | ban
+  banDuration: "",                       // minutes; "" = permanent
+  reason: "Автобан: подозрительная статистика убийств",
+  cooldownMin: 60,                       // never touch the same player twice within this window
+  maxPlaytime: 500,                      // veterans with this many hours are skipped
+  whitelist: "",                         // steamids, comma separated
+  minFlags: 2,                           // how many rules must fire at once
+  streak: { enabled: true, minKills: 6, windowSec: 5 },
+  headshot: { enabled: true, minKills: 8, minPercent: 100 },
+  distance: { enabled: false, minKills: 3, multiplier: 2.5 },
+};
+
+function anticheatConfig() {
+  const s = loadSettings().anticheat || {};
+  return {
+    ...AC_DEFAULTS,
+    ...s,
+    streak: { ...AC_DEFAULTS.streak, ...(s.streak || {}) },
+    headshot: { ...AC_DEFAULTS.headshot, ...(s.headshot || {}) },
+    distance: { ...AC_DEFAULTS.distance, ...(s.distance || {}) },
+  };
+}
+
+// Recent autoban actions, kept locally so the admin can audit them later.
+function abLog() {
+  try { return JSON.parse(localStorage.getItem("rap_ab_log_v1")) || []; } catch { return []; }
+}
+
+function abLogAdd(entry) {
+  const log = abLog();
+  log.unshift(entry);
+  localStorage.setItem("rap_ab_log_v1", JSON.stringify(log.slice(0, 30)));
+  renderAbLog();
+}
+
+function abRecentlyFired(cfg, steamid) {
+  const last = abLog().find((x) => x.steamid === steamid);
+  return !!(last && Date.now() - last.ts < cfg.cooldownMin * 60000);
+}
+
+function renderAbLog() {
+  const el = document.getElementById("autobanLog");
+  if (!el) return;
+  const log = abLog();
+  el.innerHTML = log.length
+    ? log.slice(0, 10).map((e) => `
+        <div class="chat-line">
+          <span class="tag ${e.action === "бан" ? "danger" : "warn"}">${esc(e.action)}</span>
+          <b>${esc(e.name)}</b>
+          <span class="mono muted small">${esc(e.steamid)}</span>
+          <span class="muted small">${esc(e.reason || "")}</span>
+          <span class="time">${fmtTime(new Date(e.ts).toISOString())}</span>
+        </div>`).join("")
+    : '<div class="empty">Автобаны ещё не срабатывали</div>';
+}
+
+function bindAnticheatSettings() {
+  const cfg = anticheatConfig();
+  const val = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? "" : v; };
+  const chk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+
+  chk("acEnabled", cfg.enabled);
+  val("acAction", cfg.action);
+  val("acBanDuration", cfg.banDuration);
+  val("acReason", cfg.reason);
+  val("acCooldown", cfg.cooldownMin);
+  val("acMaxPlaytime", cfg.maxPlaytime);
+  val("acWhitelist", cfg.whitelist);
+  val("acMinFlags", cfg.minFlags);
+  chk("acStreakOn", cfg.streak.enabled); val("acStreakKills", cfg.streak.minKills); val("acStreakWindow", cfg.streak.windowSec);
+  chk("acHsOn", cfg.headshot.enabled); val("acHsKills", cfg.headshot.minKills); val("acHsPct", cfg.headshot.minPercent);
+  chk("acDistOn", cfg.distance.enabled); val("acDistKills", cfg.distance.minKills); val("acDistMult", cfg.distance.multiplier);
+  renderAbLog();
+}
+
+function readAnticheatSettings() {
+  const g = (id) => document.getElementById(id);
+  const num = (id, dflt) => { const n = parseFloat(g(id).value); return isNaN(n) ? dflt : n; };
+  return {
+    enabled: g("acEnabled").checked,
+    action: g("acAction").value,
+    banDuration: g("acBanDuration").value,
+    reason: (g("acReason").value || "").trim() || AC_DEFAULTS.reason,
+    cooldownMin: Math.max(0, num("acCooldown", 60)),
+    maxPlaytime: Math.max(0, num("acMaxPlaytime", 500)),
+    whitelist: g("acWhitelist").value,
+    minFlags: Math.max(1, Math.min(3, num("acMinFlags", 2))),
+    streak: { enabled: g("acStreakOn").checked, minKills: Math.max(2, num("acStreakKills", 6)), windowSec: Math.max(1, num("acStreakWindow", 5)) },
+    headshot: { enabled: g("acHsOn").checked, minKills: Math.max(2, num("acHsKills", 8)), minPercent: Math.max(50, Math.min(100, num("acHsPct", 100))) },
+    distance: { enabled: g("acDistOn").checked, minKills: Math.max(1, num("acDistKills", 3)), multiplier: Math.max(1, num("acDistMult", 2.5)) },
+  };
+}
+
+function saveAnticheatSettings() {
+  saveSettings({ anticheat: readAnticheatSettings() });
+  const tag = document.getElementById("acSaved");
+  tag.classList.remove("hidden");
+  setTimeout(() => tag.classList.add("hidden"), 1500);
+  loadAnticheat();
+}
+
+// Longest kill streak inside a rolling time window.
+function bestStreakIn(times, windowMs) {
+  const t = [...times].sort((a, b) => a - b);
+  let best = 1;
+  let streak = 1;
+  for (let i = 1; i < t.length; i++) {
+    if (t[i] - t[i - 1] <= windowMs) {
+      streak++;
+      best = Math.max(best, streak);
+    } else {
+      streak = 1;
+    }
+  }
+  return best;
+}
+
+// Which configured rules this player actually broke right now.
+function acViolations(p, cfg) {
+  const v = [];
+  if (cfg.streak.enabled) {
+    const times = p.kills.map((k) => new Date(k.created_at).getTime());
+    const s = bestStreakIn(times, cfg.streak.windowSec * 1000);
+    if (s >= cfg.streak.minKills) v.push({ rule: "streak", text: `Серия ${s} за ${cfg.streak.windowSec}с` });
+  }
+  if (cfg.headshot.enabled && p.kills.length) {
+    const hs = p.kills.filter((k) => k.headshot).length;
+    const pct = Math.round((hs / p.kills.length) * 100);
+    if (hs >= cfg.headshot.minKills && pct >= cfg.headshot.minPercent) v.push({ rule: "headshot", text: `Хедшоты ${hs}/${p.kills.length} (${pct}%)` });
+  }
+  if (cfg.distance.enabled) {
+    const far = p.kills.filter((k) => (k.distance || 0) > weaponLimit(k.weapon) * cfg.distance.multiplier).length;
+    if (far >= cfg.distance.minKills) v.push({ rule: "distance", text: `${far} убийств с дистанции ×${cfg.distance.multiplier}` });
+  }
+  return v;
+}
+
+// Fires the configured action (ban / check / alert) for a player who broke the
+// rules. Guarded by a whitelist, a playtime ceiling and a per-player cooldown.
+async function maybeAutoban(rows, cfg) {
+  if (!cfg.enabled) return;
+
+  const wl = (cfg.whitelist || "").split(/[,\s]+/).filter(Boolean);
+  for (const p of rows) {
+    if (!p.steamid || p.flags.length === 0) continue;
+
+    const v = acViolations(p, cfg);
+    if (v.length < Math.max(1, cfg.minFlags)) continue;
+    if (wl.includes(p.steamid)) continue;
+
+    const known = allPlayers.find((x) => x.steamid === p.steamid);
+    if (known && known.rust_hours_total > cfg.maxPlaytime) continue;
+    if (abRecentlyFired(cfg, p.steamid)) continue;
+
+    const label = v.map((x) => x.text).join(", ");
+    const action = cfg.action;
+
+    if (action === "ban") {
+      await sendCommand({
+        command: "ban",
+        steamid: p.steamid,
+        name: p.name,
+        reason: `${cfg.reason} (${label})`,
+        duration_minutes: cfg.banDuration ? parseInt(cfg.banDuration, 10) : null,
+      });
+    } else if (action === "check") {
+      await sendCommand({ command: "check", steamid: p.steamid, name: p.name });
+    }
+
+    try {
+      await sb.from("alerts").insert([{
+        kind: action === "ban" ? "ban" : "check",
+        text: `Античит: ${p.name} (${p.steamid}) — ${label}`,
+      }]);
+    } catch {}
+
+    abLogAdd({
+      steamid: p.steamid,
+      name: p.name || "—",
+      action: action === "ban" ? "бан" : action === "check" ? "проверка" : "алерт",
+      reason: label,
+      ts: Date.now(),
+    });
+
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.textContent = `Античит: ${action === "ban" ? "бан" : action === "check" ? "проверка" : "алерт"} — ${p.name || p.steamid}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  }
+}
+
 async function loadAnticheat() {
   const { data, error } = await sb
     .from("kills")
@@ -1480,6 +1705,14 @@ async function loadAnticheat() {
     }).kills.push(k);
   });
 
+  const cfg = anticheatConfig();
+  // Which rules can trigger the autoban right now (shown as ⚡ in the table).
+  const autoRule = {
+    streak: cfg.enabled && cfg.streak.enabled,
+    headshot: cfg.enabled && cfg.headshot.enabled,
+    distance: cfg.enabled && cfg.distance.enabled,
+  };
+
   const rows = Object.values(byAttacker)
     .map((p) => {
       const kills = p.kills;
@@ -1488,38 +1721,29 @@ async function loadAnticheat() {
       const avgDist = Math.round(dists.reduce((a, b) => a + b, 0) / dists.length);
       const maxDist = Math.round(Math.max.apply(null, dists));
 
-      const times = kills
-        .map((k) => new Date(k.created_at).getTime())
-        .sort((a, b) => a - b);
-      let bestStreak = 1;
-      let streak = 1;
-      for (let i = 1; i < times.length; i++) {
-        if (times[i] - times[i - 1] <= STREAK_WINDOW_MS) {
-          streak++;
-          bestStreak = Math.max(bestStreak, streak);
-        } else {
-          streak = 1;
-        }
-      }
-
-      const farKills = kills.filter((k) => (k.distance || 0) > weaponLimit(k.weapon));
+      const times = kills.map((k) => new Date(k.created_at).getTime());
+      const bestStreak = bestStreakIn(times, cfg.streak.windowSec * 1000);
+      const hsPct = kills.length ? Math.round((hs / kills.length) * 100) : 0;
 
       const flags = [];
-      if (bestStreak >= STREAK_KILLS) {
-        flags.push({ cls: "danger", text: `Серия ${bestStreak} за ${STREAK_WINDOW_MS / 1000}с` });
+      if (cfg.streak.enabled && bestStreak >= cfg.streak.minKills) {
+        flags.push({ rule: "streak", cls: "danger", text: `Серия ${bestStreak} за ${cfg.streak.windowSec}с` });
       }
-      if (hs >= HEADSHOT_MIN_KILLS && hs === kills.length) {
-        flags.push({ cls: "warn", text: `Хедшот ${hs}/${kills.length}` });
+      if (cfg.headshot.enabled && hs >= cfg.headshot.minKills && hsPct >= cfg.headshot.minPercent) {
+        flags.push({ rule: "headshot", cls: "warn", text: `Хедшот ${hs}/${kills.length}` });
       }
-      if (farKills.length >= 2) {
-        flags.push({ cls: "vpn", text: `Дистанция ×${farKills.length}` });
+      if (cfg.distance.enabled) {
+        const farKills = kills.filter((k) => (k.distance || 0) > weaponLimit(k.weapon) * cfg.distance.multiplier);
+        if (farKills.length >= cfg.distance.minKills) {
+          flags.push({ rule: "distance", cls: "vpn", text: `Дистанция ×${farKills.length}` });
+        }
       }
 
       return {
         ...p,
         total: kills.length,
         hs,
-        hsPct: Math.round((hs / kills.length) * 100),
+        hsPct,
         avgDist,
         maxDist,
         bestStreak,
@@ -1529,12 +1753,15 @@ async function loadAnticheat() {
     .sort((a, b) => b.flags.length - a.flags.length || b.total - a.total);
 
   window._anticheat = rows;
+  window._acAutoRule = autoRule;
   renderAnticheat();
+  maybeAutoban(rows, cfg);
 }
 
 function renderAnticheat() {
   const body = document.getElementById("anticheatBody");
   const all = window._anticheat || [];
+  const autoRule = window._acAutoRule || {};
   if (!all.length) {
     body.innerHTML = '<tr><td colspan="7" class="empty">Убийств пока не записано</td></tr>';
     return;
@@ -1544,6 +1771,9 @@ function renderAnticheat() {
     .map((p, i) => {
       const sid = esc(p.steamid || "");
       const nm = esc(p.name || "");
+      const flagsHtml = p.flags.length
+        ? p.flags.map((f) => `<span class="tag ${f.cls}${autoRule[f.rule] ? " autoban" : ""}" title="${autoRule[f.rule] ? "может сработать автобан" : "просто пометка"}">${esc(f.text)}${autoRule[f.rule] ? " ⚡" : ""}</span>`).join(" ")
+        : '<span class="muted">—</span>';
       return `
       <tr style="cursor:pointer" onclick="${sid ? `openPlayerCard('${sid}')` : ""}">
         <td>
@@ -1555,7 +1785,7 @@ function renderAnticheat() {
         <td>${p.hs} <span class="muted">(${p.hsPct}%)</span></td>
         <td>${p.avgDist}м <span class="muted">макс ${p.maxDist}м</span></td>
         <td>${p.bestStreak}</td>
-        <td>${p.flags.map((f) => `<span class="tag ${f.cls}">${esc(f.text)}</span>`).join(" ") || '<span class="muted">—</span>'}</td>
+        <td>${flagsHtml}</td>
         <td class="row-actions">
           <button class="btn small warn" onclick="event.stopPropagation();startCheck('${sid}', '${nm}')">Проверка</button>
           <button class="btn small danger" onclick="event.stopPropagation();openBanModal('${sid}', '${nm}')">Бан</button>

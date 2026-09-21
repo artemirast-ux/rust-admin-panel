@@ -1847,6 +1847,32 @@ namespace Oxide.Plugins
                         break;
                     }
 
+                case "steamcheck":
+                    {
+                        // Manual Steam re-lookup from the panel: clears the rate-limit
+                        // cache for this player and asks the Steam Web API again. Lets an
+                        // admin retry when the profile shows "account type unknown".
+                        if (string.IsNullOrEmpty(steamid))
+                        {
+                            done = false;
+                            result = "steamcheck requires a steamid";
+                            break;
+                        }
+
+                        if (string.IsNullOrEmpty(config.SteamApiKey))
+                        {
+                            done = false;
+                            result = "Steam Web API key is not set in the config";
+                            break;
+                        }
+
+                        steamCheckedAt.Remove(steamid);
+                        LookupSteam(steamid);
+                        done = true;
+                        result = "Steam lookup requested for " + steamid;
+                        break;
+                    }
+
                 case "check":
                     {
                         // "Call for verification" from the site: opens a private channel

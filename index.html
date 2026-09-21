@@ -608,6 +608,86 @@
         <div class="panel">
           <h3>Античит</h3>
           <p class="muted small" style="margin-bottom:12px">Анализ убийств: кто убивает слишком быстро, точно или с необычной дистанции. Клик по строке — профиль игрока.</p>
+
+          <details class="ac-block" open>
+            <summary class="ac-summary">Настройки автобана — защита от случайных банов</summary>
+            <p class="muted small" style="margin:8px 0 14px">Автобан срабатывает только если включён и игрок пробил настроенный порог. По умолчанию всё консервативно — лучше пропустить читера, чем забанить легкого «про». Кулдаун не даёт банить одного игрока дважды за короткий срок.</p>
+
+            <div class="set-checks" style="margin-bottom:14px">
+              <label class="set-check"><input type="checkbox" id="acEnabled" /> <b>Автобан включён</b> (выключено = только пометки)</label>
+            </div>
+
+            <div class="ac-grid">
+              <div class="set-row">
+                <label class="set-label">Действие при срабатывании</label>
+                <select id="acAction" class="ac-input">
+                  <option value="alert">Только алерт (без наказания)</option>
+                  <option value="check">Вызов на проверку</option>
+                  <option value="ban">Автоматический бан</option>
+                </select>
+              </div>
+              <div class="set-row">
+                <label class="set-label">Длительность бана</label>
+                <select id="acBanDuration" class="ac-input">
+                  <option value="">Навсегда</option>
+                  <option value="1440">1 день</option>
+                  <option value="10080">7 дней</option>
+                  <option value="43200">30 дней</option>
+                </select>
+              </div>
+              <div class="set-row">
+                <label class="set-label">Кулдаун на одного игрока (минут)</label>
+                <input id="acCooldown" class="ac-input" type="number" min="0" max="10080" />
+              </div>
+              <div class="set-row">
+                <label class="set-label">Не трогать, если наиграно больше (часов)</label>
+                <input id="acMaxPlaytime" class="ac-input" type="number" min="0" max="20000" />
+              </div>
+              <div class="set-row">
+                <label class="set-label">Сколько правил должны сработать одновременно</label>
+                <input id="acMinFlags" class="ac-input" type="number" min="1" max="3" />
+              </div>
+              <div class="set-row" style="grid-column: 1 / -1">
+                <label class="set-label">SteamID через запятую — никогда не банить (белый список)</label>
+                <input id="acWhitelist" class="ac-input" placeholder="76561198000000000, 76561198000000001" autocomplete="off" />
+              </div>
+              <div class="set-row" style="grid-column: 1 / -1">
+                <label class="set-label">Причина в записи бана</label>
+                <input id="acReason" class="ac-input" autocomplete="off" />
+              </div>
+            </div>
+
+            <div class="ac-subtitle">Правило 1 — серия убийств (рейдж-чит: кладёт фраги подряд)</div>
+            <div class="ac-grid">
+              <label class="set-check"><input type="checkbox" id="acStreakOn" /> учитывать</label>
+              <div class="set-row"><label class="set-label">Убийств подряд</label><input id="acStreakKills" class="ac-input" type="number" min="2" max="50" /></div>
+              <div class="set-row"><label class="set-label">Окно (секунд)</label><input id="acStreakWindow" class="ac-input" type="number" min="1" max="60" /></div>
+            </div>
+
+            <div class="ac-subtitle">Правило 2 — только хедшоты (аимбот)</div>
+            <div class="ac-grid">
+              <label class="set-check"><input type="checkbox" id="acHsOn" /> учитывать</label>
+              <div class="set-row"><label class="set-label">Минимум убийств</label><input id="acHsKills" class="ac-input" type="number" min="2" max="100" /></div>
+              <div class="set-row"><label class="set-label">% хедшотов от всех</label><input id="acHsPct" class="ac-input" type="number" min="50" max="100" /></div>
+            </div>
+
+            <div class="ac-subtitle">Правило 3 — неестественная дистанция (триггер/радар)</div>
+            <div class="ac-grid">
+              <label class="set-check"><input type="checkbox" id="acDistOn" /> учитывать</label>
+              <div class="set-row"><label class="set-label">Сколько убийств с дистанции</label><input id="acDistKills" class="ac-input" type="number" min="1" max="50" /></div>
+              <div class="set-row"><label class="set-label">Превышение нормы оружия (×)</label><input id="acDistMult" class="ac-input" type="number" min="1" max="10" step="0.5" /></div>
+            </div>
+
+            <div class="row" style="margin-top:14px">
+              <button class="btn primary" id="btnAcSave">Сохранить настройки</button>
+              <button class="btn" id="btnAcReset">Сбросить по умолчанию</button>
+              <span id="acSaved" class="tag ok hidden">сохранено</span>
+            </div>
+
+            <h4 style="margin:18px 0 6px">Журнал автобанов</h4>
+            <div id="autobanLog"></div>
+          </details>
+
           <table class="table">
             <thead>
               <tr>
