@@ -90,6 +90,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   document.getElementById("btnPmSend").addEventListener("click", sendPm);
+
+  bindSettings();
   document.getElementById("pmText").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendPm();
   });
@@ -187,6 +189,7 @@ async function refreshAll() {
   if (currentView === "stats") loadStats();
   if (currentView === "audit") loadAudit();
   if (currentView === "staff") loadStaff();
+  if (currentView === "servers") loadServers();
 }
 
 /* ---------- Server status ---------- */
@@ -469,16 +472,18 @@ async function openPlayerCard(steamid) {
   );
 
   // Status badges, like the reference panel shows under a player's name
+  const rules = riskRules();
   const badges = [];
-  if (p.is_vpn) badges.push('<span class="tag vpn">VPN</span>');
+  if (p.is_vpn && rules.vpn) badges.push('<span class="tag vpn">VPN</span>');
   if (p.vpn_checked && !p.is_vpn) badges.push('<span class="tag ok">без VPN</span>');
   if (p.muted) badges.push('<span class="tag warn">Мут</span>');
   if (p.is_banned) badges.push('<span class="tag danger">Заблокирован</span>');
   if (p.being_checked) badges.push('<span class="tag warn">На проверке</span>');
-  if (p.is_pirate === true) badges.push('<span class="tag danger">Пират</span>');
-  if ((p.vac_bans ?? 0) >= 1) badges.push('<span class="tag danger">VAC</span>');
-  if ((p.game_bans ?? 0) >= 1) badges.push('<span class="tag danger">Gameban</span>');
-  if (p.rust_hours_total && p.rust_hours_total < 100) badges.push('<span class="tag warn">Мало часов</span>');
+  if (p.is_pirate === true && rules.pirate) badges.push('<span class="tag danger">Пират</span>');
+  if ((p.vac_bans ?? 0) >= 1 && rules.vac) badges.push('<span class="tag danger">VAC</span>');
+  if ((p.game_bans ?? 0) >= 1 && rules.vac) badges.push('<span class="tag danger">Gameban</span>');
+  if (p.rust_hours_total && p.rust_hours_total < rules.hoursLimit) badges.push('<span class="tag warn">Мало часов</span>');
+  if (p.steam_profile_public === false && rules.private) badges.push('<span class="tag muted">Профиль скрыт</span>');
   if (p.online && p.is_alive === false) badges.push('<span class="tag muted">Мёртв</span>');
   if (p.raid_blocked) badges.push('<span class="tag warn">Рейдблок</span>');
   if (p.ignore_reports_until && new Date(p.ignore_reports_until) > new Date()) {
@@ -1920,6 +1925,113 @@ async function loadSleepers() {
       </tr>`
     )
     .join("");
+}
+
+/* ---------- Servers ---------- */
+
+async function loadServers() {
+  const { data, error } = await sb.from("server_status").select("*").order("id", { ascending: true });
+
+  const el = document.getElementById("serversList");
+  if (error || !data) {
+    el.innerHTML = '<div class="empty">Ошибка загрузки серверов</div>';
+    return;
+  }
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">Серверы ещё не отправили первое сердцебиение</div>';
+    return;
+  }
+
+  el.innerHTML = data
+    .map((s) => {
+      const ago = Math.round((Date.now() - new Date(s.last_heartbeat).getTime()) / 1000);
+      const live = ago < 90;
+      const loadPct = s.max_players ? Math.min(100, Math.round((s.players_online / s.max_players) * 100)) : 0;
+      return `
+      <div class="server-card">
+        <div class="server-head">
+          <span class="dot ${live ? "on" : "off"}"></span>
+          <b>${esc(s.hostname) || "Rust Server"}</b>
+          <span class="tag ${live ? "ok" : "danger"}">${live ? "онлайн" : `нет связи ${ago}с`}</span>
+        </div>
+        <div class="server-grid">
+          <div class="server-cell"><span class="pkey">Игроки</span><span>${s.players_online ?? 0} / ${s.max_players ?? 0}</span></div>
+          <div class="server-cell"><span class="pkey">FPS</span><span>${s.fps ?? 0}</span></div>
+          <div class="server-cell"><span class="pkey">Обновление</span><span>${live ? "только что" : fmtTime(s.last_heartbeat)}</span></div>
+        </div>
+        <div class="server-bar"><div style="width:${loadPct}%"></div></div>
+      </div>`;
+    })
+    .join("");
+}
+
+/* ---------- Settings ---------- */
+
+const SETTINGS_KEY = "rap_settings_v1";
+
+function loadSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSettings(patch) {
+  const all = { ...loadSettings(), ...patch };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(all));
+  return all;
+}
+
+// Default risk rules: everything flagged, matching the reference panel behaviour.
+function riskRules() {
+  const s = loadSettings();
+  return {
+    vpn: s.ruleVpn !== false,
+    private: s.rulePrivate !== false,
+    vac: s.ruleVac !== false,
+    pirate: s.rulePirate !== false,
+    hoursLimit: s.hoursLimit || 100,
+  };
+}
+
+function bindSettings() {
+  const s = loadSettings();
+  const wh = document.getElementById("setWebhook");
+  const hours = document.getElementById("setHoursLimit");
+  if (wh) wh.value = s.webhook || "";
+  if (hours) hours.value = s.hoursLimit || 100;
+  ["ruleVpn", "rulePrivate", "ruleVac", "rulePirate"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = s[id] !== false;
+  });
+
+  const okTag = document.getElementById("settingsSaved");
+  const flash = () => {
+    okTag.classList.remove("hidden");
+    setTimeout(() => okTag.classList.add("hidden"), 1500);
+  };
+
+  const bw = document.getElementById("btnSaveWebhook");
+  if (bw) {
+    bw.addEventListener("click", () => {
+      saveSettings({ webhook: (wh.value || "").trim() });
+      flash();
+    });
+  }
+  const bh = document.getElementById("btnSaveRules");
+  if (bh) {
+    bh.addEventListener("click", () => {
+      saveSettings({
+        hoursLimit: parseInt(hours.value, 10) > 0 ? parseInt(hours.value, 10) : 100,
+        ruleVpn: document.getElementById("ruleVpn").checked,
+        rulePrivate: document.getElementById("rulePrivate").checked,
+        ruleVac: document.getElementById("ruleVac").checked,
+        rulePirate: document.getElementById("rulePirate").checked,
+      });
+      flash();
+    });
+  }
 }
 
 /* ---------- Alerts ---------- */

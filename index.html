@@ -42,19 +42,22 @@
               <a href="#" class="nav-link" data-view="chat"><span class="nav-ico">💬</span>Чат</a>
               <a href="#" class="nav-link" data-view="reports"><span class="nav-ico">🚩</span>Репорты <span id="reportsBadge" class="badge hidden"></span></a>
               <a href="#" class="nav-link" data-view="checks"><span class="nav-ico">🛡</span>Проверки <span id="checksBadge" class="badge hidden"></span></a>
-              <a href="#" class="nav-link" data-view="alerts"><span class="nav-ico">🔔</span>Оповещения <span id="alertsBadge" class="badge hidden"></span></a>
+              <a href="#" class="nav-link" data-view="alerts"><span class="nav-ico">🔔</span>Алерты <span id="alertsBadge" class="badge hidden"></span></a>
               <a href="#" class="nav-link" data-view="mutes"><span class="nav-ico">🔇</span>Муты</a>
-              <a href="#" class="nav-link" data-view="bans"><span class="nav-ico">🔒</span>Блокировки</a>
+              <a href="#" class="nav-link" data-view="bans"><span class="nav-ico">🔒</span>Баны</a>
             </div>
           </details>
           <details class="nav-block" open>
             <summary class="nav-block-title">Управление</summary>
             <div class="nav-items">
               <a href="#" class="nav-link" data-view="dashboard"><span class="nav-ico">📊</span>Обзор</a>
-              <a href="#" class="nav-link" data-view="map"><span class="nav-ico">🗺</span>Карта</a>
               <a href="#" class="nav-link" data-view="stats"><span class="nav-ico">📈</span>Статистика</a>
-              <a href="#" class="nav-link" data-view="history"><span class="nav-ico">🕘</span>История</a>
+              <a href="#" class="nav-link" data-view="servers"><span class="nav-ico">🖥</span>Серверы</a>
               <a href="#" class="nav-link" data-view="audit"><span class="nav-ico">📜</span>Журнал аудита</a>
+              <a href="#" class="nav-link" data-view="integrations"><span class="nav-ico">🔌</span>Интеграции</a>
+              <a href="#" class="nav-link" data-view="settings"><span class="nav-ico">⚙️</span>Настройки</a>
+              <a href="#" class="nav-link" data-view="map"><span class="nav-ico">🗺</span>Карта</a>
+              <a href="#" class="nav-link" data-view="history"><span class="nav-ico">🕘</span>История</a>
               <a href="#" class="nav-link" data-view="sleepers"><span class="nav-ico">😴</span>Спальники</a>
               <a href="#" class="nav-link" data-view="killanalysis"><span class="nav-ico">🎯</span>Подозрения <span id="suspiciousBadge" class="badge hidden"></span></a>
               <a href="#" class="nav-link" data-view="ipchecks"><span class="nav-ico">🌐</span>IP и VPN</a>
@@ -71,9 +74,7 @@
             <div class="nav-items">
               <a href="#" class="nav-link" data-view="general"><span class="nav-ico">📦</span>Общее</a>
               <a href="#" class="nav-link" data-view="staff"><span class="nav-ico">🧑‍💼</span>Сотрудники</a>
-              <a href="#" class="nav-link" data-view="servers"><span class="nav-ico">🖥</span>Серверы</a>
-              <a href="#" class="nav-link" data-view="integrations"><span class="nav-ico">🔌</span>Интеграции</a>
-              <a href="#" class="nav-link" data-view="settings"><span class="nav-ico">🔐</span>Разрешения</a>
+              <a href="#" class="nav-link" data-view="billing"><span class="nav-ico">💳</span>Биллинг</a>
               <a href="#" class="nav-link" data-view="drawings"><span class="nav-ico">🎨</span>Рисунки</a>
             </div>
           </details>
@@ -299,7 +300,7 @@
 
       <section id="view-alerts" class="view">
         <div class="panel">
-          <h3>Оповещения</h3>
+          <h3>Алерты</h3>
           <p class="muted small" style="margin-bottom:12px">События сервера: обнаруженные VPN, новые жалобы, баны и начатые проверки.</p>
           <div id="alertsList"></div>
         </div>
@@ -346,7 +347,11 @@
       </section>
 
       <section id="view-servers" class="view">
-        <div class="panel"><div class="stub"><div class="stub-icon">🖥</div><h3>Серверы</h3><p>Подключение нескольких Rust-серверов к одной панели — скоро.</p></div></div>
+        <div class="panel">
+          <h3>Серверы</h3>
+          <p class="muted small" style="margin-bottom:12px">Подключённые к панели сервера и их состояние в реальном времени.</p>
+          <div id="serversList"></div>
+        </div>
       </section>
 
       <section id="view-integrations" class="view">
@@ -354,11 +359,46 @@
       </section>
 
       <section id="view-settings" class="view">
-        <div class="panel"><div class="stub"><div class="stub-icon">🔐</div><h3>Разрешения</h3><p>Управление ролями и правами сотрудников скоро будет доступно здесь. Сейчас список админов задаётся в таблице <span class="mono">admins</span> (Supabase).</p></div></div>
+        <div class="panel">
+          <h3>Настройки</h3>
+          <p class="muted small" style="margin-bottom:14px">Настройки проекта: уведомления и правила риска. Применяются к профилям игроков.</p>
+
+          <div class="set-row">
+            <div style="flex:1;min-width:200px">
+              <label class="set-label">Discord webhook</label>
+              <input id="setWebhook" class="search-input" placeholder="https://discord.com/api/webhooks/…" autocomplete="off" />
+            </div>
+            <button class="btn primary" id="btnSaveWebhook" style="margin-top:22px">Сохранить</button>
+          </div>
+
+          <div class="set-row">
+            <div style="flex:1;min-width:200px">
+              <label class="set-label">Считать новичком, если часов в Rust меньше</label>
+              <input id="setHoursLimit" class="search-input" type="number" min="1" max="2000" style="max-width:140px" />
+            </div>
+          </div>
+
+          <div class="set-block">
+            <label class="set-label">Правила риска — помечать в профиле игрока</label>
+            <div class="set-checks">
+              <label class="set-check"><input type="checkbox" id="ruleVpn" /> VPN / прокси</label>
+              <label class="set-check"><input type="checkbox" id="rulePrivate" /> Скрытый профиль Steam</label>
+              <label class="set-check"><input type="checkbox" id="ruleVac" /> VAC / Gameban</label>
+              <label class="set-check"><input type="checkbox" id="rulePirate" /> Пиратский аккаунт</label>
+            </div>
+          </div>
+
+          <button class="btn primary" id="btnSaveRules">Сохранить правила</button>
+          <span id="settingsSaved" class="tag ok hidden">сохранено</span>
+        </div>
       </section>
 
       <section id="view-general" class="view">
         <div class="panel"><div class="stub"><div class="stub-icon">📦</div><h3>Общее</h3><p>Информация о версии и состоянии проекта — скоро.</p></div></div>
+      </section>
+
+      <section id="view-billing" class="view">
+        <div class="panel"><div class="stub"><div class="stub-icon">💳</div><h3>Биллинг</h3><p>Тарифы проекта, оплата и история счетов — скоро.</p></div></div>
       </section>
 
       <section id="view-drawings" class="view">
