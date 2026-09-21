@@ -134,14 +134,23 @@
             <button class="btn primary" id="btnFlagPlayer">Пометить игрока</button>
           </div>
           <input id="playersSearch" class="search-input" placeholder="Поиск по нику, SteamID64, IP…" autocomplete="off" />
+          <div class="table-toolbar">
+            <div class="chips" id="playersChips">
+              <button class="chip active" data-pf="all">Все</button>
+              <button class="chip" data-pf="online">Онлайн</button>
+              <button class="chip" data-pf="offline">Оффлайн</button>
+            </div>
+            <span id="playersCount" class="count-line muted small"></span>
+          </div>
           <table class="table">
             <thead>
               <tr>
-                <th>Игрок</th>
-                <th>SteamID64</th>
-                <th>Риск</th>
-                <th>Наиграно</th>
-                <th>Статус</th>
+                <th class="sortable" data-view="players" data-key="name" data-label="Игрок">Игрок</th>
+                <th class="sortable" data-view="players" data-key="steamid" data-label="SteamID64">SteamID64</th>
+                <th class="sortable" data-view="players" data-key="risk" data-label="Риск">Риск</th>
+                <th class="sortable" data-view="players" data-key="hours" data-label="Наиграно">Наиграно</th>
+                <th class="sortable" data-view="players" data-key="status" data-label="Статус">Статус</th>
+                <th class="sortable" data-view="players" data-key="last_seen" data-label="Последний визит">Последний визит</th>
                 <th></th>
               </tr>
             </thead>
@@ -157,10 +166,23 @@
             <p class="page-subtitle">Проверка, назначение и закрытие репортов игроков.</p>
             <button class="btn primary" id="btnCreateReport">Создать репорт</button>
           </div>
-          <p class="muted small" style="margin-bottom:12px">Нажмите «Проверка», чтобы вызвать игрока на проверку и следить за ним в реальном времени. Правый клик по строке — быстрое меню.</p>
+          <div class="table-toolbar">
+            <div class="chips" id="reportsChips">
+              <button class="chip active" data-rf="pending">Активные</button>
+              <button class="chip" data-rf="all">Все</button>
+            </div>
+            <span id="reportsCount" class="count-line muted small"></span>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Репорт</th><th>Цель</th><th>Причина</th><th>Статус</th><th>Обновлён</th><th></th></tr>
+              <tr>
+                <th class="sortable" data-view="reports" data-key="id" data-label="Репорт">Репорт</th>
+                <th class="sortable" data-view="reports" data-key="target_name" data-label="Цель">Цель</th>
+                <th class="sortable" data-view="reports" data-key="reason" data-label="Причина">Причина</th>
+                <th class="sortable" data-view="reports" data-key="status" data-label="Статус">Статус</th>
+                <th class="sortable" data-view="reports" data-key="created_at" data-label="Обновлён">Обновлён</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody id="reportsBody"></tbody>
           </table>
@@ -174,9 +196,19 @@
             <p class="page-subtitle">Начинай, отслеживай и закрывай проверки игроков из веб-панели.</p>
             <button class="btn primary" id="btnStartCheck">Начать проверку</button>
           </div>
+          <div class="table-toolbar">
+            <span id="checksCount" class="count-line muted small"></span>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Игрок</th><th>SteamID64</th><th>Статус</th><th>Причина</th><th>Обновлён</th><th></th></tr>
+              <tr>
+                <th class="sortable" data-view="checks" data-key="name" data-label="Игрок">Игрок</th>
+                <th class="sortable" data-view="checks" data-key="steamid" data-label="SteamID64">SteamID64</th>
+                <th class="sortable" data-view="checks" data-key="status" data-label="Статус">Статус</th>
+                <th class="sortable" data-view="checks" data-key="reason" data-label="Причина">Причина</th>
+                <th class="sortable" data-view="checks" data-key="created_at" data-label="Обновлён">Обновлён</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody id="checksBody"></tbody>
           </table>
@@ -190,9 +222,19 @@
             <p class="page-subtitle">Записи глобальных и серверных банов.</p>
             <button class="btn primary" id="btnAddBan">Добавить бан</button>
           </div>
+          <div class="table-toolbar">
+            <span id="bansCount" class="count-line muted small"></span>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Игрок</th><th>Область</th><th>Причина</th><th>Статус</th><th>Истекает</th><th></th></tr>
+              <tr>
+                <th class="sortable" data-view="bans" data-key="name" data-label="Игрок">Игрок</th>
+                <th class="sortable" data-view="bans" data-key="scope" data-label="Область">Область</th>
+                <th class="sortable" data-view="bans" data-key="reason" data-label="Причина">Причина</th>
+                <th class="sortable" data-view="bans" data-key="active" data-label="Статус">Статус</th>
+                <th class="sortable" data-view="bans" data-key="expires_at" data-label="Истекает">Истекает</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody id="bansBody"></tbody>
           </table>
@@ -206,9 +248,18 @@
             <p class="page-subtitle">История мутов, активные ограничения и снятие мутов.</p>
             <button class="btn primary" id="btnAddMute">Добавить мут</button>
           </div>
+          <div class="table-toolbar">
+            <span id="mutesCount" class="count-line muted small"></span>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Игрок</th><th>Область</th><th>Причина</th><th>Статус</th><th>Истекает</th><th></th></tr>
+              <tr>
+                <th class="sortable" data-view="mutes" data-key="name" data-label="Игрок">Игрок</th>
+                <th class="sortable" data-view="mutes" data-key="reason" data-label="Причина">Причина</th>
+                <th class="sortable" data-view="mutes" data-key="active" data-label="Статус">Статус</th>
+                <th class="sortable" data-view="mutes" data-key="expires_at" data-label="Истекает">Истекает</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody id="mutesBody"></tbody>
           </table>
@@ -267,7 +318,13 @@
           <div id="hist-kills" class="htab active">
             <table class="table">
               <thead>
-                <tr><th>Киллер</th><th>Жертва</th><th>Оружие</th><th>Дистанция</th><th>Время</th></tr>
+                <tr>
+                  <th class="sortable" data-view="kills" data-key="attacker" data-label="Киллер">Киллер</th>
+                  <th class="sortable" data-view="kills" data-key="victim" data-label="Жертва">Жертва</th>
+                  <th class="sortable" data-view="kills" data-key="weapon" data-label="Оружие">Оружие</th>
+                  <th class="sortable" data-view="kills" data-key="distance" data-label="Дистанция">Дистанция</th>
+                  <th class="sortable" data-view="kills" data-key="created_at" data-label="Время">Время</th>
+                </tr>
               </thead>
               <tbody id="killsBody"></tbody>
             </table>
@@ -275,7 +332,13 @@
           <div id="hist-connections" class="htab">
             <table class="table">
               <thead>
-                <tr><th>Ник</th><th>SteamID</th><th>IP</th><th>Событие</th><th>Время</th></tr>
+                <tr>
+                  <th class="sortable" data-view="connections" data-key="name" data-label="Ник">Ник</th>
+                  <th class="sortable" data-view="connections" data-key="steamid" data-label="SteamID">SteamID</th>
+                  <th class="sortable" data-view="connections" data-key="ip" data-label="IP">IP</th>
+                  <th class="sortable" data-view="connections" data-key="type" data-label="Событие">Событие</th>
+                  <th class="sortable" data-view="connections" data-key="created_at" data-label="Время">Время</th>
+                </tr>
               </thead>
               <tbody id="connectionsBody"></tbody>
             </table>
@@ -283,7 +346,15 @@
           <div id="hist-actions" class="htab">
             <table class="table">
               <thead>
-                <tr><th>Команда</th><th>Цель</th><th>Причина</th><th>Админ</th><th>Статус</th><th>Результат</th><th>Время</th></tr>
+                <tr>
+                  <th class="sortable" data-view="actions" data-key="command" data-label="Команда">Команда</th>
+                  <th class="sortable" data-view="actions" data-key="name" data-label="Цель">Цель</th>
+                  <th>Причина</th>
+                  <th class="sortable" data-view="actions" data-key="admin" data-label="Админ">Админ</th>
+                  <th class="sortable" data-view="actions" data-key="status" data-label="Статус">Статус</th>
+                  <th>Результат</th>
+                  <th class="sortable" data-view="actions" data-key="created_at" data-label="Время">Время</th>
+                </tr>
               </thead>
               <tbody id="actionsBody"></tbody>
             </table>
@@ -314,7 +385,16 @@
           </div>
           <table class="table">
             <thead>
-              <tr><th>IP</th><th>Игрок</th><th>Страна</th><th>Провайдер / ASN</th><th>Тип</th><th>VPN</th><th>Риск</th><th>Время</th></tr>
+              <tr>
+                <th class="sortable" data-view="ipchecks" data-key="ip" data-label="IP">IP</th>
+                <th class="sortable" data-view="ipchecks" data-key="name" data-label="Игрок">Игрок</th>
+                <th class="sortable" data-view="ipchecks" data-key="country" data-label="Страна">Страна</th>
+                <th class="sortable" data-view="ipchecks" data-key="isp" data-label="Провайдер / ASN">Провайдер / ASN</th>
+                <th data-label="Тип">Тип</th>
+                <th class="sortable" data-view="ipchecks" data-key="is_vpn" data-label="VPN">VPN</th>
+                <th class="sortable" data-view="ipchecks" data-key="risk" data-label="Риск">Риск</th>
+                <th class="sortable" data-view="ipchecks" data-key="created_at" data-label="Время">Время</th>
+              </tr>
             </thead>
             <tbody id="ipChecksBody"></tbody>
           </table>
@@ -327,7 +407,24 @@
             <h3 class="page-title">Карта</h3>
             <p class="page-subtitle">Позиции игроков онлайн (обновление каждые 15 секунд). Клик по точке — профиль игрока.</p>
           </div>
-          <div id="mapCanvas" class="map-canvas"></div>
+          <div class="table-toolbar">
+            <label class="map-toggle"><input type="checkbox" id="mtOnline" checked /> Онлайн</label>
+            <label class="map-toggle"><input type="checkbox" id="mtOffline" checked /> Последние позиции</label>
+            <label class="map-toggle"><input type="checkbox" id="mtSleepers" checked /> Спальники</label>
+            <select id="mapSize" class="map-size" title="Размер карты сервера">
+              <option value="6000">Карта 6000</option>
+              <option value="4500">Карта 4500</option>
+              <option value="3500">Карта 3500</option>
+              <option value="3000">Карта 3000</option>
+              <option value="2000">Карта 2000</option>
+            </select>
+          </div>
+          <div class="map-wrap">
+            <div class="map-corner"></div>
+            <div class="map-axis-x" id="mapAxisX"></div>
+            <div class="map-axis-y" id="mapAxisY"></div>
+            <div id="mapCanvas" class="map-canvas"></div>
+          </div>
           <div id="mapLegend" class="map-legend muted small"></div>
         </div>
       </section>
@@ -338,9 +435,18 @@
             <h3 class="page-title">Спальники</h3>
             <p class="page-subtitle">Спящие тела игроков, оставшиеся на карте.</p>
           </div>
+          <div class="table-toolbar">
+            <span id="sleepersCount" class="count-line muted small"></span>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Ник</th><th>SteamID</th><th>Координаты</th><th>Видели в последний раз</th><th>Действия</th></tr>
+              <tr>
+                <th class="sortable" data-view="sleepers" data-key="name" data-label="Ник">Ник</th>
+                <th class="sortable" data-view="sleepers" data-key="steamid" data-label="SteamID">SteamID</th>
+                <th>Координаты</th>
+                <th class="sortable" data-view="sleepers" data-key="last_seen" data-label="Видели в последний раз">Видели в последний раз</th>
+                <th>Действия</th>
+              </tr>
             </thead>
             <tbody id="sleepersBody"></tbody>
           </table>
@@ -353,9 +459,18 @@
             <h3 class="page-title">Алерты</h3>
             <p class="page-subtitle">Подозрительные входы, повторные нарушители и кастомные алерты плагина.</p>
           </div>
+          <div class="table-toolbar">
+            <span id="alertsCount" class="count-line muted small"></span>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Сигнал</th><th>Игрок</th><th>Правило</th><th>Важность</th><th>Время</th></tr>
+              <tr>
+                <th class="sortable" data-view="alerts" data-key="kind" data-label="Сигнал">Сигнал</th>
+                <th class="sortable" data-view="alerts" data-key="player" data-label="Игрок">Игрок</th>
+                <th class="sortable" data-view="alerts" data-key="rule" data-label="Правило">Правило</th>
+                <th class="sortable" data-view="alerts" data-key="sev" data-label="Важность">Важность</th>
+                <th class="sortable" data-view="alerts" data-key="created_at" data-label="Время">Время</th>
+              </tr>
             </thead>
             <tbody id="alertsBody"></tbody>
           </table>
@@ -387,9 +502,18 @@
             <p class="page-subtitle">Неизменяемая история действий персонала и событий плагина.</p>
             <button class="btn primary" id="btnExportAudit">Экспорт аудита</button>
           </div>
+          <div class="table-toolbar">
+            <span id="auditCount" class="count-line muted small"></span>
+          </div>
           <table class="table">
             <thead>
-              <tr><th>Исполнитель</th><th>Действие</th><th>Цель</th><th>Результат</th><th>Время</th></tr>
+              <tr>
+                <th class="sortable" data-view="audit" data-key="admin" data-label="Исполнитель">Исполнитель</th>
+                <th class="sortable" data-view="audit" data-key="command" data-label="Действие">Действие</th>
+                <th class="sortable" data-view="audit" data-key="name" data-label="Цель">Цель</th>
+                <th class="sortable" data-view="audit" data-key="status" data-label="Результат">Результат</th>
+                <th class="sortable" data-view="audit" data-key="created_at" data-label="Время">Время</th>
+              </tr>
             </thead>
             <tbody id="auditBody"></tbody>
           </table>
@@ -405,7 +529,13 @@
           </div>
           <table class="table">
             <thead>
-              <tr><th>Участник</th><th>Роль</th><th>Права</th><th>Статус</th><th>Добавлен</th></tr>
+              <tr>
+                <th class="sortable" data-view="staff" data-key="email" data-label="Участник">Участник</th>
+                <th class="sortable" data-view="staff" data-key="role" data-label="Роль">Роль</th>
+                <th>Права</th>
+                <th>Статус</th>
+                <th class="sortable" data-view="staff" data-key="created_at" data-label="Добавлен">Добавлен</th>
+              </tr>
             </thead>
             <tbody id="staffBody"></tbody>
           </table>
@@ -481,12 +611,12 @@
           <table class="table">
             <thead>
               <tr>
-                <th>Игрок</th>
-                <th>Убийств</th>
-                <th>Хедшоты</th>
-                <th>Дистанция</th>
-                <th>Серия</th>
-                <th>Флаги</th>
+                <th class="sortable" data-view="anticheat" data-key="name" data-label="Игрок">Игрок</th>
+                <th class="sortable" data-view="anticheat" data-key="total" data-label="Убийств">Убийств</th>
+                <th class="sortable" data-view="anticheat" data-key="hs" data-label="Хедшоты">Хедшоты</th>
+                <th class="sortable" data-view="anticheat" data-key="avgDist" data-label="Дистанция">Дистанция</th>
+                <th class="sortable" data-view="anticheat" data-key="streak" data-label="Серия">Серия</th>
+                <th class="sortable" data-view="anticheat" data-key="flags" data-label="Флаги">Флаги</th>
                 <th></th>
               </tr>
             </thead>

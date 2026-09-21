@@ -1656,17 +1656,66 @@ body {
 
 /* ---------- Map ---------- */
 
+.map-wrap {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  grid-template-rows: 20px 1fr;
+  max-width: 100%;
+}
+
+.map-corner {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.map-axis-x,
+.map-axis-y {
+  display: flex;
+  user-select: none;
+  pointer-events: none;
+}
+
+.map-axis-x {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.map-axis-x span {
+  flex: 1;
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 20px;
+}
+
+.map-axis-y {
+  grid-column: 1;
+  grid-row: 2;
+  flex-direction: column;
+}
+
+.map-axis-y span {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 10px;
+  color: var(--muted);
+  padding-right: 5px;
+}
+
 .map-canvas {
   position: relative;
+  grid-column: 2;
+  grid-row: 2;
   width: 100%;
   aspect-ratio: 1 / 1;
   max-height: 62vh;
-  margin: 0 auto;
   background-color: #232323;
   background-image:
     linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 10% 10%;
+  background-size: calc(100% / 26) calc(100% / 26);
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
@@ -1701,8 +1750,120 @@ body {
   box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.55), 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
+/* Offline players keep their last known spot, but dimmed and outlined. */
+.map-dot.offline {
+  opacity: 0.4;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  margin-top: -8px;
+  font-size: 8px;
+  border-style: dashed;
+}
+
+.map-dot.sleeper {
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  font-size: 9px;
+  background: #4b4b52;
+  border-color: rgba(0, 0, 0, 0.6);
+}
+
 .map-legend {
   margin-top: 10px;
+}
+
+.map-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.map-toggle input {
+  accent-color: var(--accent);
+}
+
+.map-size {
+  margin-left: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---------- Sortable tables ---------- */
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th.sortable:hover {
+  color: var(--text);
+}
+
+th.sortable::after {
+  content: " ↕";
+  opacity: 0.3;
+  font-size: 11px;
+}
+
+th.sortable.sorted::after {
+  content: "";
+}
+
+/* ---------- Table toolbar (chips + count) ---------- */
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.chips {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.chip {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.chip:hover {
+  color: var(--text);
+}
+
+.chip.active {
+  color: #fff;
+  background: var(--accent);
+}
+
+.count-line {
+  font-size: 12.5px;
 }
 
 /* ---------- Alerts ---------- */

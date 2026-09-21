@@ -33,7 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (ps) {
     ps.addEventListener("input", (e) => {
       playersQuery = e.target.value;
-      loadPlayers();
+      renderPlayers();
     });
   }
 
@@ -108,6 +108,44 @@ document.addEventListener("DOMContentLoaded", () => {
   bind("btnConnectServer", () => alert("Установите плагин RustAdminPanel.cs на сервер и пропишите URL проекта и секретный ключ в oxide/config/RustAdminPanel.json — сервер появится здесь автоматически."));
   bind("btnInviteStaff", () => alert("Добавьте сотрудника в Supabase: Authentication → Users → Add user, затем вставьте его email в таблицу admins (role: owner/admin/moderator/support)."));
   bind("btnExportAudit", exportAudit);
+
+  // Any <th class="sortable" data-view data-key data-label> re-sorts its table.
+  document.addEventListener("click", (e) => {
+    const th = e.target.closest("th.sortable");
+    if (th && th.dataset.view) toggleSort(th.dataset.view, th.dataset.key);
+  });
+
+  document.querySelectorAll("#playersChips .chip").forEach((c) => {
+    c.addEventListener("click", () => {
+      playersFilter = c.dataset.pf;
+      document.querySelectorAll("#playersChips .chip").forEach((x) => x.classList.toggle("active", x === c));
+      renderPlayers();
+    });
+  });
+
+  document.querySelectorAll("#reportsChips .chip").forEach((c) => {
+    c.addEventListener("click", () => {
+      reportsFilter = c.dataset.rf;
+      document.querySelectorAll("#reportsChips .chip").forEach((x) => x.classList.toggle("active", x === c));
+      renderReports();
+    });
+  });
+
+  [["mtOnline", "online"], ["mtOffline", "offline"], ["mtSleepers", "sleepers"]].forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", () => { mapToggles[key] = el.checked; renderMap(); });
+  });
+  const mapSizeSel = document.getElementById("mapSize");
+  if (mapSizeSel) {
+    const saved = loadSettings().mapSize || 6000;
+    mapSizeSel.value = String(saved);
+    WORLD_SIZE = saved;
+    mapSizeSel.addEventListener("change", () => {
+      WORLD_SIZE = parseInt(mapSizeSel.value, 10) || 6000;
+      saveSettings({ mapSize: WORLD_SIZE });
+      renderMap();
+    });
+  }
 
   bindSettings();
   document.getElementById("pmText").addEventListener("keydown", (e) => {
@@ -208,6 +246,60 @@ async function refreshAll() {
   if (currentView === "audit") loadAudit();
   if (currentView === "staff") loadStaff();
   if (currentView === "servers") loadServers();
+}
+
+/* ---------- Sortable tables ---------- */
+
+// viewKey -> { key, dir }
+const tableSorts = {};
+// viewKey -> raw rows as fetched from Supabase (before sorting / filtering)
+const tableCache = {};
+// viewKey -> { columnKey: row => comparable value }
+const SORT_GETTERS = {};
+// viewKey -> () => re-renders tableCache[viewKey] back into the DOM
+const SORT_RENDER = {};
+
+// Returns rows re-ordered by the active sort for that view (or unchanged).
+function sortedRows(viewKey, rows) {
+  const st = tableSorts[viewKey];
+  if (!st) return rows;
+  const get = (SORT_GETTERS[viewKey] || {})[st.key];
+  if (!get) return rows;
+  const dir = st.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = get(a);
+    const vb = get(b);
+    if (va === vb) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+    return String(va).localeCompare(String(vb), "ru", { numeric: true, sensitivity: "base" }) * dir;
+  });
+}
+
+// Click on a <th class="sortable"> flips the sort (or picks a new column) and
+// re-renders the table from cache, without hitting Supabase again.
+function toggleSort(viewKey, key) {
+  const st = tableSorts[viewKey];
+  if (st && st.key === key) {
+    st.dir = st.dir === "asc" ? "desc" : "asc";
+  } else {
+    tableSorts[viewKey] = { key, dir: "desc" };
+  }
+  paintSortArrows(viewKey);
+  if (SORT_RENDER[viewKey]) SORT_RENDER[viewKey]();
+}
+
+// Writes ▲/▼ into the headers of one table so the active sort is visible.
+function paintSortArrows(viewKey) {
+  const st = tableSorts[viewKey];
+  document.querySelectorAll('th.sortable[data-view="' + viewKey + '"]').forEach((th) => {
+    const active = st && st.key === th.dataset.key;
+    th.classList.toggle("sorted", !!active);
+    th.textContent = active
+      ? th.dataset.label + " " + (st.dir === "asc" ? "▲" : "▼")
+      : th.dataset.label;
+  });
 }
 
 /* ---------- Server status ---------- */
@@ -333,33 +425,70 @@ async function loadDashboard() {  // NOTE: with head:true the count comes back N
 
 let allPlayers = []; // every known player (incl. offline), used for multi-account lookup
 let playersQuery = "";
+let playersFilter = "all"; // all | online | offline
+
+// How many risk factors a player carries (drives the "Риск" column sort).
+function playerRiskScore(p) {
+  let n = 0;
+  if (p.is_vpn) n++;
+  if (p.is_pirate === true) n += 2;
+  if ((p.vac_bans ?? 0) >= 1) n += 3;
+  if ((p.game_bans ?? 0) >= 1) n++;
+  if (p.rust_hours_total && p.rust_hours_total < (loadSettings().hoursLimit || 100)) n++;
+  if (p.steam_profile_public === false) n++;
+  return n;
+}
+
+SORT_GETTERS.players = {
+  name: (p) => p.name,
+  steamid: (p) => p.steamid,
+  risk: (p) => playerRiskScore(p),
+  hours: (p) => p.rust_hours_total ?? null,
+  status: (p) => (p.online ? 1 : 0),
+  last_seen: (p) => (p.last_seen ? new Date(p.last_seen).getTime() : 0),
+};
+SORT_RENDER.players = renderPlayers;
 
 async function loadPlayers() {
-  const [{ data, error }, { data: all }] = await Promise.all([
-    sb.from("players").select("*").order("last_seen", { ascending: false }).limit(200),
+  const [{ data, error }] = await Promise.all([
+    sb.from("players").select("*").order("last_seen", { ascending: false }).limit(300),
     sb.from("players").select("steamid,name,ip,hwid,online,last_seen"),
   ]);
-  allPlayers = all || [];
+  allPlayers = data || [];
 
+  if (error) {
+    const el = document.getElementById("playersBody");
+    if (el) el.innerHTML = `<tr><td colspan="7" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
+    return;
+  }
+  tableCache.players = data || [];
+  renderPlayers();
+}
+
+function renderPlayers() {
   const el = document.getElementById("playersBody");
   if (!el) return;
-
-  if (error || !data) {
-    el.innerHTML = `<tr><td colspan="7" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
-    return;
-  }
-  if (!data.length) {
-    el.innerHTML = '<tr><td colspan="7" class="empty">Сейчас на сервере никого нет</td></tr>';
-    return;
-  }
+  const all = tableCache.players || [];
 
   const q = playersQuery.trim().toLowerCase();
-  const list = q ? data.filter((p) => String(p.name || "").toLowerCase().includes(q)) : data;
+  let list = q ? all.filter((p) => String(p.name || "").toLowerCase().includes(q) || String(p.steamid || "").includes(q) || String(p.ip || "").includes(q)) : all;
+  if (playersFilter === "online") list = list.filter((p) => p.online);
+  if (playersFilter === "offline") list = list.filter((p) => !p.online);
 
+  const nOnline = all.filter((p) => p.online).length;
+  const cnt = document.getElementById("playersCount");
+  if (cnt) cnt.innerHTML = `Онлайн: <b>${nOnline}</b> · Оффлайн: ${all.length - nOnline} · Всего: ${all.length}`;
+
+  if (!all.length) {
+    el.innerHTML = '<tr><td colspan="7" class="empty">Игроков пока не было</td></tr>';
+    return;
+  }
   if (!list.length) {
     el.innerHTML = `<tr><td colspan="7" class="empty">Никого не найдено по запросу «${esc(playersQuery)}»</td></tr>`;
     return;
   }
+
+  const sorted = sortedRows("players", list);
 
   // Group players by IP / HWID to find shared accounts
   const byKey = (list2, key) => {
@@ -379,14 +508,14 @@ async function loadPlayers() {
     return ipN + hwN;
   };
 
-  el.innerHTML = list
+  el.innerHTML = sorted
     .map((p) => {
       const dups = dupCount(p);
       const risks = [];
       if (p.is_vpn) risks.push('<span class="tag vpn">VPN</span>');
       if (p.is_pirate === true) risks.push('<span class="tag danger">Пират</span>');
       if ((p.vac_bans ?? 0) >= 1) risks.push('<span class="tag danger">VAC</span>');
-      if (p.rust_hours_total && p.rust_hours_total < 100) risks.push('<span class="tag warn">Мало часов</span>');
+      if (p.rust_hours_total && p.rust_hours_total < (loadSettings().hoursLimit || 100)) risks.push('<span class="tag warn">Мало часов</span>');
       if (dups) risks.push(`<button class="tag dup" title="Другие аккаунты с таким же IP или компьютером" onclick="event.stopPropagation();showDuplicates('${p.steamid}')">${dups + 1} акк.</button>`);
       const playtime = p.rust_hours_total != null ? p.rust_hours_total + " ч" : "—";
       const status = p.online
@@ -403,6 +532,7 @@ async function loadPlayers() {
         <td>${risks.length ? risks.join(" ") : '<span class="tag ok">Clean</span>'}</td>
         <td>${playtime}</td>
         <td>${status}</td>
+        <td class="muted small">${p.online ? "сейчас играет" : fmtTime(p.last_seen)}</td>
         <td class="row-actions">
           <button class="btn small warn" onclick="event.stopPropagation();startCheck('${esc(p.steamid)}','${esc(p.name)}')">Проверка</button>
           <button class="btn small danger" onclick="event.stopPropagation();openBanModal('${esc(p.steamid)}','${esc(p.name)}')">Бан</button>
@@ -648,24 +778,53 @@ function copyText(text, okMsg) {
 
 /* ---------- Reports ---------- */
 
+let reportsFilter = "pending"; // pending | all
+
+SORT_GETTERS.reports = {
+  id: (r) => r.id,
+  target_name: (r) => r.target_name,
+  reason: (r) => r.reason,
+  status: (r) => r.status,
+  created_at: (r) => (r.created_at ? new Date(r.created_at).getTime() : 0),
+};
+SORT_RENDER.reports = renderReports;
+
 async function loadReports() {
   const { data, error } = await sb
     .from("reports")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(200);
 
+  if (error) {
+    document.getElementById("reportsBody").innerHTML = `<tr><td colspan="6" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
+    return;
+  }
+  tableCache.reports = data || [];
+  renderReports();
+}
+
+function renderReports() {
   const body = document.getElementById("reportsBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="7" class="empty">Ошибка загрузки</td></tr>`;
-    return;
-  }
-  if (!data.length) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">Нет репортов</td></tr>';
+  const all = tableCache.reports || [];
+  const pending = all.filter((r) => r.status === "pending");
+
+  const cnt = document.getElementById("reportsCount");
+  if (cnt) cnt.innerHTML = `Активных репортов: <b>${pending.length}</b> · Всего: ${all.length}`;
+
+  if (!all.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Нет репортов</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  const sorted = sortedRows("reports", all);
+  const list = reportsFilter === "pending" ? sorted.filter((r) => r.status === "pending") : sorted;
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Активных репортов нет — все жалобы обработаны</td></tr>';
+    return;
+  }
+
+  body.innerHTML = list
     .map(
       (r) => `
       <tr data-sid="${esc(r.target_steamid || "")}" data-name="${esc(r.target_name || "")}">
@@ -685,7 +844,7 @@ async function loadReports() {
     .join("");
 
   // Right-click on a report row: "Вызвать на проверку" (RustApp-style context menu)
-  document.querySelectorAll("#reportsBody tr[data-sid]").forEach((tr) => {
+  body.querySelectorAll("tr[data-sid]").forEach((tr) => {
     tr.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       reportCtxMenu(e.clientX, e.clientY, tr.dataset.sid, tr.dataset.name);
@@ -770,6 +929,15 @@ document.addEventListener("click", (e) => {
 
 /* ---------- Checks (verification sessions) ---------- */
 
+SORT_GETTERS.checks = {
+  name: (c) => c.name,
+  steamid: (c) => c.steamid,
+  status: (c) => c.status,
+  reason: (c) => c.reason,
+  created_at: (c) => (c.closed_at || c.created_at ? new Date(c.closed_at || c.created_at).getTime() : 0),
+};
+SORT_RENDER.checks = renderChecks;
+
 async function loadChecks() {
   const { data, error } = await sb
     .from("checks")
@@ -777,17 +945,27 @@ async function loadChecks() {
     .order("created_at", { ascending: false })
     .limit(100);
 
-  const body = document.getElementById("checksBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
+  if (error) {
+    document.getElementById("checksBody").innerHTML = `<tr><td colspan="6" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
     return;
   }
-  if (!data.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">Проверок ещё не было. Откройте любую жалобу и нажмите «Проверка».</td></tr>';
+  tableCache.checks = data || [];
+  renderChecks();
+}
+
+function renderChecks() {
+  const body = document.getElementById("checksBody");
+  const all = tableCache.checks || [];
+  const active = all.filter((c) => c.status === "active");
+  const cnt = document.getElementById("checksCount");
+  if (cnt) cnt.innerHTML = `Идёт проверок: <b>${active.length}</b> · Всего: ${all.length}`;
+
+  if (!all.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Проверок ещё не было. Откройте любую жалобу и нажмите «Проверка».</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("checks", all)
     .map(
       (c) => `
       <tr>
@@ -979,9 +1157,20 @@ async function checkVerdict(verdict) {
     reason: banned ? (reason || "Читы / стороннее ПО") : null,
   });
 
+  // A closed verdict resolves every pending report against that player, so the
+  // report queue clears instead of piling up on the same person.
+  await deletePendingReports(activeCheck.steamid);
+
   closeCheckModal();
   if (currentView === "reports") loadReports();
   refreshAll();
+}
+
+async function deletePendingReports(steamid) {
+  if (!steamid) return;
+  try {
+    await sb.from("reports").delete().eq("target_steamid", steamid).eq("status", "pending");
+  } catch {}
 }
 
 async function markReportReviewed(id) {
@@ -991,6 +1180,16 @@ async function markReportReviewed(id) {
 
 /* ---------- Bans ---------- */
 
+SORT_GETTERS.bans = {
+  name: (b) => b.name,
+  scope: (b) => (b.hwid ? "SteamID + HWID" : "SteamID + IP"),
+  reason: (b) => b.reason,
+  active: (b) => (b.active ? 1 : 0),
+  expires_at: (b) => (b.expires_at ? new Date(b.expires_at).getTime() : 0),
+  created_at: (b) => (b.created_at ? new Date(b.created_at).getTime() : 0),
+};
+SORT_RENDER.bans = renderBans;
+
 async function loadBans() {
   const { data, error } = await sb
     .from("bans")
@@ -998,17 +1197,29 @@ async function loadBans() {
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const body = document.getElementById("bansBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки</td></tr>`;
+  if (error) {
+    document.getElementById("bansBody").innerHTML = `<tr><td colspan="6" class="empty">Ошибка загрузки</td></tr>`;
     return;
   }
-  if (!data.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">Банов нет</td></tr>';
+  tableCache.bans = data || [];
+  renderBans();
+}
+
+function renderBans() {
+  const body = document.getElementById("bansBody");
+  const all = tableCache.bans || [];
+  const cnt = document.getElementById("bansCount");
+  if (cnt) {
+    const live = all.filter((b) => b.active && (!b.expires_at || new Date(b.expires_at) >= new Date()));
+    cnt.innerHTML = `Активных банов: <b>${live.length}</b> · Всего: ${all.length}`;
+  }
+
+  if (!all.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Банов нет</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("bans", all)
     .map((b) => {
       const expired = b.expires_at && new Date(b.expires_at) < new Date();
       const statusTag = !b.active
@@ -1033,6 +1244,15 @@ async function loadBans() {
 
 /* ---------- Mutes ---------- */
 
+SORT_GETTERS.mutes = {
+  name: (m) => m.name,
+  reason: (m) => m.reason,
+  active: (m) => (m.active ? 1 : 0),
+  expires_at: (m) => (m.expires_at ? new Date(m.expires_at).getTime() : 0),
+  created_at: (m) => (m.created_at ? new Date(m.created_at).getTime() : 0),
+};
+SORT_RENDER.mutes = renderMutes;
+
 async function loadMutes() {
   const { data, error } = await sb
     .from("mutes")
@@ -1040,22 +1260,33 @@ async function loadMutes() {
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const body = document.getElementById("mutesBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="6" class="empty">Ошибка загрузки</td></tr>`;
+  if (error) {
+    document.getElementById("mutesBody").innerHTML = `<tr><td colspan="6" class="empty">Ошибка загрузки</td></tr>`;
     return;
   }
-  if (!data.length) {
+  tableCache.mutes = data || [];
+  renderMutes();
+}
+
+function renderMutes() {
+  const body = document.getElementById("mutesBody");
+  const all = tableCache.mutes || [];
+  const cnt = document.getElementById("mutesCount");
+  if (cnt) {
+    const live = all.filter((m) => m.active && (!m.expires_at || new Date(m.expires_at) >= new Date()));
+    cnt.innerHTML = `Активных мутов: <b>${live.length}</b> · Всего: ${all.length}`;
+  }
+
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="6" class="empty">Мутов нет</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("mutes", all)
     .map(
       (m) => `
       <tr>
         <td><b>${esc(m.name) || "—"}</b><br><span class="mono muted">${esc(m.steamid)}</span></td>
-        <td>Глобальный чат</td>
         <td>${esc(m.reason)}</td>
         <td>${m.active ? '<span class="tag warn">активен</span>' : '<span class="tag muted">снят</span>'}</td>
         <td>${m.expires_at ? fmtTime(m.expires_at) : "Перманент"}</td>
@@ -1211,6 +1442,16 @@ async function loadKillAnalysis() {
 
 /* ---------- Anticheat (kill analysis table) ---------- */
 
+SORT_GETTERS.anticheat = {
+  name: (p) => p.name,
+  total: (p) => p.total,
+  hs: (p) => p.hsPct,
+  avgDist: (p) => p.avgDist,
+  streak: (p) => p.bestStreak,
+  flags: (p) => p.flags.length,
+};
+SORT_RENDER.anticheat = renderAnticheat;
+
 async function loadAnticheat() {
   const { data, error } = await sb
     .from("kills")
@@ -1288,8 +1529,18 @@ async function loadAnticheat() {
     .sort((a, b) => b.flags.length - a.flags.length || b.total - a.total);
 
   window._anticheat = rows;
+  renderAnticheat();
+}
 
-  body.innerHTML = rows
+function renderAnticheat() {
+  const body = document.getElementById("anticheatBody");
+  const all = window._anticheat || [];
+  if (!all.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">Убийств пока не записано</td></tr>';
+    return;
+  }
+
+  body.innerHTML = sortedRows("anticheat", all)
     .map((p, i) => {
       const sid = esc(p.steamid || "");
       const nm = esc(p.name || "");
@@ -1710,6 +1961,15 @@ function loadHistoryTab(name) {
 
 /* ---------- Kills ---------- */
 
+SORT_GETTERS.kills = {
+  attacker: (k) => k.attacker_name,
+  victim: (k) => k.victim_name,
+  weapon: (k) => k.weapon,
+  distance: (k) => k.distance ?? null,
+  created_at: (k) => (k.created_at ? new Date(k.created_at).getTime() : 0),
+};
+SORT_RENDER.kills = renderKills;
+
 async function loadKills() {
   const { data, error } = await sb
     .from("kills")
@@ -1717,17 +1977,23 @@ async function loadKills() {
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const body = document.getElementById("killsBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>`;
+  if (error) {
+    document.getElementById("killsBody").innerHTML = `<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>`;
     return;
   }
-  if (!data.length) {
+  tableCache.kills = data || [];
+  renderKills();
+}
+
+function renderKills() {
+  const body = document.getElementById("killsBody");
+  const all = tableCache.kills || [];
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="5" class="empty">Убийств нет</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("kills", all)
     .map(
       (k) => `
       <tr>
@@ -1743,6 +2009,15 @@ async function loadKills() {
 
 /* ---------- Connections ---------- */
 
+SORT_GETTERS.connections = {
+  name: (c) => c.name,
+  steamid: (c) => c.steamid,
+  ip: (c) => c.ip,
+  type: (c) => c.type,
+  created_at: (c) => (c.created_at ? new Date(c.created_at).getTime() : 0),
+};
+SORT_RENDER.connections = renderConnections;
+
 async function loadConnections() {
   const { data, error } = await sb
     .from("connection_logs")
@@ -1750,17 +2025,23 @@ async function loadConnections() {
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const body = document.getElementById("connectionsBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>`;
+  if (error) {
+    document.getElementById("connectionsBody").innerHTML = `<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>`;
     return;
   }
-  if (!data.length) {
+  tableCache.connections = data || [];
+  renderConnections();
+}
+
+function renderConnections() {
+  const body = document.getElementById("connectionsBody");
+  const all = tableCache.connections || [];
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="5" class="empty">Подключений нет</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("connections", all)
     .map(
       (c) => `
       <tr>
@@ -1776,6 +2057,17 @@ async function loadConnections() {
 
 /* ---------- IP checks ---------- */
 
+SORT_GETTERS.ipchecks = {
+  ip: (c) => c.ip,
+  name: (c) => c.name,
+  country: (c) => c.country || c.country_code,
+  isp: (c) => c.isp,
+  is_vpn: (c) => (c.is_vpn ? 1 : 0),
+  risk: (c) => c.risk ?? null,
+  created_at: (c) => (c.created_at ? new Date(c.created_at).getTime() : 0),
+};
+SORT_RENDER.ipchecks = renderIpChecks;
+
 async function loadIpChecks() {
   const { data, error } = await sb
     .from("ip_checks")
@@ -1783,17 +2075,23 @@ async function loadIpChecks() {
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const body = document.getElementById("ipChecksBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
+  if (error) {
+    document.getElementById("ipChecksBody").innerHTML = `<tr><td colspan="8" class="empty">Ошибка загрузки: ${esc(error?.message || "")}</td></tr>`;
     return;
   }
-  if (!data.length) {
+  tableCache.ipchecks = data || [];
+  renderIpChecks();
+}
+
+function renderIpChecks() {
+  const body = document.getElementById("ipChecksBody");
+  const all = tableCache.ipchecks || [];
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="8" class="empty">IP ещё не проверялся. Игроки проверяются автоматически при заходе на сервер, либо введите любой IP выше.</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("ipchecks", all)
     .map(
       (c) => `
       <tr>
@@ -1854,6 +2152,15 @@ async function checkIp(ip) {
 
 /* ---------- Actions (commands) ---------- */
 
+SORT_GETTERS.actions = {
+  command: (c) => c.command,
+  name: (c) => c.name || c.steamid,
+  admin: (c) => c.admin,
+  status: (c) => c.status,
+  created_at: (c) => (c.created_at ? new Date(c.created_at).getTime() : 0),
+};
+SORT_RENDER.actions = renderActions;
+
 async function loadActions() {
   const { data, error } = await sb
     .from("commands")
@@ -1861,17 +2168,23 @@ async function loadActions() {
     .order("created_at", { ascending: false })
     .limit(100);
 
-  const body = document.getElementById("actionsBody");
-  if (error || !data) {
-    body.innerHTML = `<tr><td colspan="7" class="empty">Ошибка загрузки</td></tr>`;
+  if (error) {
+    document.getElementById("actionsBody").innerHTML = `<tr><td colspan="7" class="empty">Ошибка загрузки</td></tr>`;
     return;
   }
-  if (!data.length) {
+  tableCache.actions = data || [];
+  renderActions();
+}
+
+function renderActions() {
+  const body = document.getElementById("actionsBody");
+  const all = tableCache.actions || [];
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="7" class="empty">Действий пока не было</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("actions", all)
     .map(
       (c) => `
       <tr>
@@ -1889,54 +2202,111 @@ async function loadActions() {
 
 // Rust world size in Unity units. Full map = 6000; smaller maps are 4500/3500 etc.
 // Positions are centered on (0,0), so x/z range roughly -WORLD_SIZE/2..WORLD_SIZE/2.
-const WORLD_SIZE = 6000;
+let WORLD_SIZE = 6000;
 
 /* ---------- Map (players positions) ---------- */
 
+const mapToggles = { online: true, offline: true, sleepers: true };
+
+// A player only gets a dot once the server has reported real coordinates.
+// Columns default to 0, so a fresh database would otherwise pile everyone in
+// the centre of the map.
+function hasPos(p) {
+  return p.pos_x != null && p.pos_z != null && (p.pos_x !== 0 || p.pos_z !== 0);
+}
+
+function mapLeft(x) {
+  const half = WORLD_SIZE / 2;
+  return Math.max(0, Math.min(100, ((x + half) / WORLD_SIZE) * 100));
+}
+function mapTop(z) {
+  const half = WORLD_SIZE / 2;
+  // Unity z grows to the south; the in-game map north is -z.
+  return Math.max(0, Math.min(100, ((-z + half) / WORLD_SIZE) * 100));
+}
+
 async function loadMap() {
-  const { data, error } = await sb
-    .from("players")
-    .select("steamid,name,pos_x,pos_z,is_vpn")
-    .eq("online", true);
+  if (!window._mapAxisDone) {
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+    document.getElementById("mapAxisX").innerHTML = letters.map((l) => `<span>${l}</span>`).join("");
+    document.getElementById("mapAxisY").innerHTML = letters.map((_, i) => `<span>${i + 1}</span>`).join("");
+    window._mapAxisDone = true;
+  }
+
+  const [{ data: players, error }, { data: sleepers }] = await Promise.all([
+    sb.from("players").select("steamid,name,pos_x,pos_z,is_vpn,online,last_seen").limit(500),
+    sb.from("sleepers").select("steamid,name,pos_x,pos_z,last_seen").limit(500),
+  ]);
 
   const el = document.getElementById("mapCanvas");
   if (!el) return;
 
-  if (error || !data) {
+  if (error) {
     el.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(error?.message || "")}</div>`;
     return;
   }
-  if (!data.length) {
-    el.innerHTML = '<div class="empty">Сейчас на сервере никого нет</div>';
-    document.getElementById("mapLegend").textContent = "";
-    return;
+  tableCache.mapPlayers = players || [];
+  tableCache.mapSleepers = sleepers || [];
+  renderMap();
+}
+
+function renderMap() {
+  const el = document.getElementById("mapCanvas");
+  if (!el) return;
+  const players = tableCache.mapPlayers || [];
+  const sleepers = tableCache.mapSleepers || [];
+
+  const on = players.filter((p) => p.online && hasPos(p));
+  const off = players.filter((p) => !p.online && hasPos(p));
+  const sl = sleepers.filter(hasPos);
+  const noPos = players.filter((p) => !hasPos(p)).length;
+
+  const dots = [];
+  if (mapToggles.online) {
+    on.forEach((p) => {
+      dots.push(`<div class="map-dot ${p.is_vpn ? "vpn" : ""}" style="left:${mapLeft(p.pos_x)}%;top:${mapTop(p.pos_z)}%;background:${avatarColor(p.name)}" title="${esc(p.name)} — онлайн (${Math.round(p.pos_x)}, ${Math.round(p.pos_z)})" data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}">${initials(p.name)}</div>`);
+    });
+  }
+  if (mapToggles.offline) {
+    off.forEach((p) => {
+      dots.push(`<div class="map-dot offline" style="left:${mapLeft(p.pos_x)}%;top:${mapTop(p.pos_z)}%;background:${avatarColor(p.name)}" title="${esc(p.name)} — последняя позиция (${Math.round(p.pos_x)}, ${Math.round(p.pos_z)})" data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}">${initials(p.name)}</div>`);
+    });
+  }
+  if (mapToggles.sleepers) {
+    sl.forEach((s) => {
+      dots.push(`<div class="map-dot sleeper" style="left:${mapLeft(s.pos_x)}%;top:${mapTop(s.pos_z)}%" title="${esc(s.name)} — спальник (${Math.round(s.pos_x)}, ${Math.round(s.pos_z)})" data-sid="${esc(s.steamid)}" data-name="${esc(s.name)}">Z</div>`);
+    });
   }
 
-  const half = WORLD_SIZE / 2;
-  el.innerHTML = data
-    .map((p) => {
-      const x = p.pos_x ?? 0;
-      const z = p.pos_z ?? 0;
-      // Unity z grows to the south; the in-game map north is -z.
-      const left = Math.max(0, Math.min(100, ((x + half) / WORLD_SIZE) * 100));
-      const top = Math.max(0, Math.min(100, ((-z + half) / WORLD_SIZE) * 100));
-      return `<div class="map-dot ${p.is_vpn ? "vpn" : ""}" style="left:${left}%;top:${top}%;background:${avatarColor(p.name)}" title="${esc(p.name)} (${x}, ${z})" data-sid="${esc(p.steamid)}">${initials(p.name)}</div>`;
-    })
-    .join("");
-
-  el.querySelectorAll(".map-dot").forEach((d) => {
-    d.addEventListener("click", () => openPlayerCard(d.dataset.sid));
-    d.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      playerCtxMenu(e.clientX, e.clientY, d.dataset.sid, d.title.split(" (")[0]);
+  if (!dots.length) {
+    el.innerHTML = noPos
+      ? `<div class="empty">${noPos} игроков в базе, но сервер ещё не прислал ни одной позиции. Обнови плагин до версии с записью координат и дождись, пока зайдут игроки.</div>`
+      : '<div class="empty">Нет позиций — точки появятся, когда игроки зайдут на сервер</div>';
+  } else {
+    el.innerHTML = dots.join("");
+    el.querySelectorAll(".map-dot").forEach((d) => {
+      d.addEventListener("click", () => openPlayerCard(d.dataset.sid));
+      d.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        playerCtxMenu(e.clientX, e.clientY, d.dataset.sid, d.dataset.name);
+      });
     });
-  });
+  }
 
-  const vpnN = data.filter((p) => p.is_vpn).length;
-  document.getElementById("mapLegend").textContent = `${data.length} игроков онлайн · ${vpnN} с VPN · клик — профиль, правый клик — меню`;
+  document.getElementById("mapLegend").innerHTML =
+    `Онлайн: <b>${on.length}</b> · последние позиции: ${off.length} · спальников: ${sl.length}` +
+    (noPos ? ` · без координат: ${noPos}` : "") +
+    " · клик — профиль, правый клик — меню";
 }
 
 /* ---------- Sleepers ---------- */
+
+SORT_GETTERS.sleepers = {
+  name: (s) => s.name,
+  steamid: (s) => s.steamid,
+  last_seen: (s) => (s.last_seen ? new Date(s.last_seen).getTime() : 0),
+};
+SORT_RENDER.sleepers = renderSleepers;
 
 async function loadSleepers() {
   const { data, error } = await sb
@@ -1945,23 +2315,32 @@ async function loadSleepers() {
     .order("last_seen", { ascending: false })
     .limit(200);
 
-  const body = document.getElementById("sleepersBody");
-  if (error || !data) {
-    body.innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
+  if (error) {
+    document.getElementById("sleepersBody").innerHTML = `<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>`;
     return;
   }
-  if (!data.length) {
+  tableCache.sleepers = data || [];
+  renderSleepers();
+}
+
+function renderSleepers() {
+  const body = document.getElementById("sleepersBody");
+  const all = tableCache.sleepers || [];
+  const cnt = document.getElementById("sleepersCount");
+  if (cnt) cnt.innerHTML = `Спальников на карте: <b>${all.length}</b>`;
+
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="5" class="empty">Спящих игроков нет</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("sleepers", all)
     .map(
       (s) => `
       <tr>
         <td><span class="avatar small" style="background:${avatarColor(s.name)}">${initials(s.name)}</span> ${esc(s.name) || "—"}</td>
         <td class="mono">${esc(s.steamid)}</td>
-        <td class="mono">${s.pos_x ?? 0}, ${s.pos_z ?? 0}</td>
+        <td class="mono">${s.pos_x ?? 0}, ${s.pos_z ?? 0} <span class="muted small">(${mapSquare(s.pos_x, s.pos_z)})</span></td>
         <td>${fmtTime(s.last_seen)}</td>
         <td>
           <button class="btn small" onclick="openPlayerCard('${esc(s.steamid)}')">Подробнее</button>
@@ -2088,6 +2467,26 @@ const ALERT_META = {
   check: { icon: "🔍", label: "Проверка", rule: "Подозрительная активность", sev: "Medium", cls: "warn" },
 };
 
+const SEVERITY_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 };
+
+SORT_GETTERS.alerts = {
+  kind: (a) => (ALERT_META[a.kind] || {}).label || a.kind,
+  player: (a) => alertPlayerName(a),
+  rule: (a) => (ALERT_META[a.kind] || {}).rule || "—",
+  sev: (a) => SEVERITY_RANK[(ALERT_META[a.kind] || {}).sev] ?? 5,
+  created_at: (a) => (a.created_at ? new Date(a.created_at).getTime() : 0),
+};
+SORT_RENDER.alerts = renderAlerts;
+
+// alerts.text is a free-form line like "VPN/proxy: PlayerName (1.2.3.4)";
+// the player name is what follows the first colon, before the paren.
+function alertPlayerName(a) {
+  const cut = (a.text || "").indexOf(":");
+  const rest = cut >= 0 ? (a.text || "").slice(cut + 1).trim() : (a.text || "");
+  const paren = rest.indexOf("(");
+  return paren > 0 ? rest.slice(0, paren).trim() : rest;
+}
+
 async function loadAlerts() {
   const { data, error } = await sb
     .from("alerts")
@@ -2095,29 +2494,35 @@ async function loadAlerts() {
     .order("created_at", { ascending: false })
     .limit(100);
 
-  const body = document.getElementById("alertsBody");
-  if (error || !data) {
-    body.innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
+  if (error) {
+    document.getElementById("alertsBody").innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
     return;
   }
-  if (!data.length) {
+  tableCache.alerts = data || [];
+  renderAlerts();
+}
+
+function renderAlerts() {
+  const body = document.getElementById("alertsBody");
+  const all = tableCache.alerts || [];
+  const cnt = document.getElementById("alertsCount");
+  if (cnt) {
+    const high = all.filter((a) => (SEVERITY_RANK[(ALERT_META[a.kind] || {}).sev] ?? 5) <= 1).length;
+    cnt.innerHTML = `Всего алертов: <b>${all.length}</b> · критичных/высоких: ${high}`;
+  }
+
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="5" class="empty">Алертов пока нет</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("alerts", all)
     .map((a) => {
       const m = ALERT_META[a.kind] || { icon: "ℹ", label: a.kind || "Событие", rule: "—", sev: "Info", cls: "muted" };
-      // alerts.text is a free-form line like "VPN/proxy: PlayerName (1.2.3.4)";
-      // the player name is what follows the first colon, before the paren.
-      const cut = (a.text || "").indexOf(":");
-      const rest = cut >= 0 ? (a.text || "").slice(cut + 1).trim() : (a.text || "");
-      const paren = rest.indexOf("(");
-      const playerName = paren > 0 ? rest.slice(0, paren).trim() : rest;
       return `
       <tr class="alert-row ${esc(a.kind)}">
         <td><span class="alert-ico">${m.icon}</span> ${m.label}</td>
-        <td><b>${esc(playerName)}</b></td>
+        <td><b>${esc(alertPlayerName(a))}</b></td>
         <td class="small muted">${esc(m.rule)}</td>
         <td><span class="tag ${m.cls}">${m.sev}</span></td>
         <td>${fmtTime(a.created_at)}</td>
@@ -2201,6 +2606,15 @@ async function loadStats() {
 
 /* ---------- Audit log ---------- */
 
+SORT_GETTERS.audit = {
+  admin: (c) => c.admin,
+  command: (c) => c.command,
+  name: (c) => c.name || c.steamid,
+  status: (c) => c.status,
+  created_at: (c) => (c.created_at ? new Date(c.created_at).getTime() : 0),
+};
+SORT_RENDER.audit = renderAudit;
+
 async function loadAudit() {
   const { data, error } = await sb
     .from("commands")
@@ -2208,17 +2622,26 @@ async function loadAudit() {
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const body = document.getElementById("auditBody");
-  if (error || !data) {
-    body.innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
+  if (error) {
+    document.getElementById("auditBody").innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
     return;
   }
-  if (!data.length) {
+  tableCache.audit = data || [];
+  renderAudit();
+}
+
+function renderAudit() {
+  const body = document.getElementById("auditBody");
+  const all = tableCache.audit || [];
+  const cnt = document.getElementById("auditCount");
+  if (cnt) cnt.innerHTML = `Действий в журнале: <b>${all.length}</b>`;
+
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="5" class="empty">Действий пока не было</td></tr>';
     return;
   }
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("audit", all)
     .map(
       (c) => `
       <tr>
@@ -2234,15 +2657,28 @@ async function loadAudit() {
 
 /* ---------- Staff (admins) ---------- */
 
+SORT_GETTERS.staff = {
+  email: (a) => a.email,
+  role: (a) => a.role,
+  created_at: (a) => (a.created_at ? new Date(a.created_at).getTime() : 0),
+};
+SORT_RENDER.staff = renderStaff;
+
 async function loadStaff() {
   const { data, error } = await sb.from("admins").select("*").order("created_at", { ascending: true });
 
-  const body = document.getElementById("staffBody");
-  if (error || !data) {
-    body.innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
+  if (error) {
+    document.getElementById("staffBody").innerHTML = '<tr><td colspan="5" class="empty">Ошибка загрузки</td></tr>';
     return;
   }
-  if (!data.length) {
+  tableCache.staff = data || [];
+  renderStaff();
+}
+
+function renderStaff() {
+  const body = document.getElementById("staffBody");
+  const all = tableCache.staff || [];
+  if (!all.length) {
     body.innerHTML = '<tr><td colspan="5" class="empty">Сотрудников нет</td></tr>';
     return;
   }
@@ -2254,7 +2690,7 @@ async function loadStaff() {
     support: "Репорты, заметки",
   };
 
-  body.innerHTML = data
+  body.innerHTML = sortedRows("staff", all)
     .map(
       (a) => `
       <tr>
